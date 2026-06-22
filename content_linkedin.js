@@ -307,15 +307,22 @@ function extractPostInfo(postElement, commentBox) {
     }
   }
   
-  // Fallback to main post extraction
-  // Try to extract the main post text
+  // Extract the main post text.
+  // Selector priority (confirmed from live LinkedIn HTML, June 2025):
+  // 1. data-testid="expandable-text-box" — the span LinkedIn renders post body text into
+  // 2. componentkey*=feed-commentary span — backup for the same element via a different attribute
+  // 3. Legacy selectors for older LinkedIn layouts
+  // REMOVED: [dir="ltr"] — it matches author names, job titles, comments, timestamps. Never use it.
   const mainTextElem = findFirstWithText(scopedPostElement, [
+    '[data-testid="expandable-text-box"]',
+    '[componentkey*="feed-commentary"] span[tabindex]',
+    '[componentkey*="feed-commentary"] span',
     '[data-ad-preview="message"]',
     '.feed-shared-update-v2__description',
+    '.update-components-text span',
     '.update-components-text',
     '.feed-shared-inline-show-more-text',
     '.update-components-update-v2__commentary',
-    '[dir="ltr"]'
   ]);
   const postText = getElementText(mainTextElem);
 
@@ -918,7 +925,6 @@ const butterflyLastFillTime = new WeakMap();
         setCommentBoxValue(box, result.suggestions[0], { avoidFocus: true });
         releaseComposerFocusAfterLinkedInUpdates(box);
         console.log('[Butterfly] Auto-suggestion applied.');
-        addInteractionButtons(box, postElement, suggestBtn, result.suggestions);
         addVariantsDropdown(box, result.suggestions, 0);
       } else {
         console.log('[Butterfly] Auto-suggestion failed or returned empty.');
@@ -1049,75 +1055,6 @@ const butterflyLastFillTime = new WeakMap();
     }
   }
   
-  function addInteractionButtons(box, postElement, suggestBtnInstance, suggestions = null) {
-    const uiContainer = findUiContainerScope(box).querySelector('.butterfly-ui-container[data-commentbox-id="' + box.dataset.butterflyId + '"]');
-    if (!uiContainer) {
-      console.error("[Butterfly] UI container not found for interaction buttons.");
-      return;
-    }
-    
-    // Remove existing refine button
-    uiContainer.querySelectorAll('.butterfly-refine-btn').forEach(btn => btn.remove());
-    
-    const refineBtn = document.createElement('button');
-    refineBtn.textContent = 'Refine';
-    refineBtn.className = 'butterfly-refine-btn butterfly-btn';
-    refineBtn.style.cssText = 'background-color: SlateBlue; color: white; padding: 6px 12px; border: 1px solid #40528A; border-radius: 5px; margin-left: 5px; margin-top: 5px; cursor: pointer; font-size: 0.85em; font-weight: 500;';
-    refineBtn.onclick = async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      if (!isExtensionContextValid()) {
-        alert('Extension was updated. Please refresh the page to continue using Butterfly.');
-        return;
-      }
-      if (!linkedinEnabled) {
-        removeLinkedInUI();
-        return;
-      }
-      
-      const originalSuggestText = suggestBtnInstance ? suggestBtnInstance.textContent : 'Suggest Comment ✨';
-      refineBtn.disabled = true;
-      refineBtn.textContent = 'Refining...';
-      if (suggestBtnInstance) suggestBtnInstance.disabled = true;
-      
-      const instructions = prompt('How would you like to refine the reply? (Add extra instructions)', '');
-      
-      // Early return if user cancels or provides empty input
-      if (instructions === null || instructions.trim() === '') {
-        refineBtn.disabled = false;
-        refineBtn.textContent = 'Refine';
-        if (suggestBtnInstance) {
-          suggestBtnInstance.disabled = false;
-          suggestBtnInstance.textContent = originalSuggestText;
-        }
-        return;
-      }
-      
-      // Get the current value of the comment box
-      let currentComment = box.isContentEditable ? getElementText(box) : box.value;
-      const { postText, postAuthor } = extractPostInfo(postElement, box);
-      clearSuggestionError(box);
-      const result = await getGeminiSuggestion(postText, postAuthor, instructions, currentComment);
-      if (result.error) {
-        showSuggestionError(box, result.error);
-      } else if (result.disabled) {
-        removeLinkedInUI();
-        return;
-      } else if (result.suggestions && result.suggestions.length > 0) {
-        setCommentBoxValue(box, result.suggestions[0]);
-        addVariantsDropdown(box, result.suggestions, 0);
-      }
-      
-      refineBtn.disabled = false;
-      refineBtn.textContent = 'Refine';
-      if (suggestBtnInstance) {
-        suggestBtnInstance.disabled = false;
-        suggestBtnInstance.textContent = originalSuggestText;
-      }
-    };
-    uiContainer.appendChild(refineBtn);
-  }
 
   function injectUI(box, postElement) {
     if (!linkedinEnabled) return;
@@ -1187,7 +1124,6 @@ const butterflyLastFillTime = new WeakMap();
         return;
       } else if (result.suggestions && result.suggestions.length > 0) {
         setCommentBoxValue(box, result.suggestions[0]);
-        addInteractionButtons(box, postElement, suggestBtn, result.suggestions);
         addVariantsDropdown(box, result.suggestions, 0);
       }
       suggestBtn.disabled = false;

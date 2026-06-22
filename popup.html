@@ -1,163 +1,586 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
   <meta charset="UTF-8">
-  <title>Butterfly Settings</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Butterfly</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* Premium SaaS CSS Reset & Styles (Shadcn UI Inspired) */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 400px;
+      min-width: 400px;
+      max-width: 400px;
+      font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+      font-size: 0.875rem;
+      background-color: #fafafa;
+      color: #09090b;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Header Styling */
+    .app-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+      background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+      color: #ffffff;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .app-logo {
+      font-size: 1.75rem;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.3s ease;
+    }
+
+    .app-header:hover .app-logo {
+      transform: scale(1.1) rotate(5deg);
+    }
+
+    .header-info {
+      flex-grow: 1;
+    }
+
+    .app-title {
+      font-weight: 800;
+      font-size: 1.15rem;
+      letter-spacing: -0.025em;
+    }
+
+    .app-tagline {
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.85);
+      font-weight: 500;
+    }
+
+    .badge-version {
+      background-color: rgba(255, 255, 255, 0.15);
+      color: #ffffff;
+      padding: 3px 8px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      border-radius: 9999px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    /* Main Container */
+    .main-container {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Card Component */
+    .card {
+      background-color: #ffffff;
+      border: 1px solid #e4e4e7;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 1px 2px rgba(0, 0, 0, 0.01);
+      overflow: visible; /* Required for custom dropdown popovers */
+      position: relative;
+      transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: #d4d4d8;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    }
+
+    .card-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid #f4f4f5;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: #3f3f46;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: #fafafa;
+    }
+
+    .card-body {
+      padding: 16px;
+    }
+
+    .card-link {
+      color: #7c3aed;
+      text-decoration: none;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: color 0.15s ease;
+    }
+
+    .card-link:hover {
+      color: #4f46e5;
+      text-decoration: underline;
+    }
+
+    /* Alert / Informational Badge */
+    .alert-info {
+      background-color: #f5f3ff;
+      border: 1px solid #ddd6fe;
+      color: #6d28d9;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      line-height: 1.4;
+      font-weight: 500;
+      margin-bottom: 12px;
+      display: flex;
+      gap: 6px;
+      align-items: flex-start;
+    }
+
+    .alert-info.d-none {
+      display: none;
+    }
+
+    .alert-icon {
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+
+    /* Forms */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #52525b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .form-control {
+      font-family: 'Nunito', system-ui, sans-serif;
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      color: #09090b;
+      background-color: #ffffff;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .form-control::placeholder {
+      color: #a1a1aa;
+    }
+
+    .form-control:focus {
+      border-color: #a78bfa;
+      box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.15);
+    }
+
+    textarea.form-control {
+      resize: vertical;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    /* Radix / Shadcn Custom Select Component */
+    .custom-select-container {
+      position: relative;
+      width: 100%;
+    }
+
+    .custom-select-trigger {
+      font-family: 'Nunito', system-ui, sans-serif;
+      width: 100%;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      color: #09090b;
+      background-color: #ffffff;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      outline: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .custom-select-trigger:focus {
+      border-color: #a78bfa;
+      box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.15);
+    }
+
+    .chevron-icon {
+      color: #71717a;
+      transition: transform 0.2s ease;
+    }
+
+    .custom-select-container.open .chevron-icon {
+      transform: rotate(180deg);
+    }
+
+    .custom-select-popover {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background-color: #ffffff;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+      z-index: 50;
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      animation: popoverFadeIn 0.15s ease;
+    }
+
+    @keyframes popoverFadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-4px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .custom-select-option {
+      font-family: 'Nunito', system-ui, sans-serif;
+      padding: 8px 10px;
+      font-size: 0.85rem;
+      color: #27272a;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    .custom-select-option:hover {
+      background-color: #f4f4f5;
+      color: #09090b;
+    }
+
+    .custom-select-option.selected {
+      background-color: #f5f3ff;
+      color: #7c3aed;
+      font-weight: 600;
+    }
+
+    .check-icon {
+      flex-shrink: 0;
+      opacity: 0;
+      color: #7c3aed;
+    }
+
+    .custom-select-option.selected .check-icon {
+      opacity: 1;
+    }
+
+    /* Buttons */
+    .btn {
+      font-family: 'Nunito', system-ui, sans-serif;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 0.8rem;
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Shadcn Premium Primary Violet Button styling */
+    .btn-primary {
+      background-color: #7c3aed;
+      color: #ffffff;
+      box-shadow: 0 2px 4px rgba(124, 58, 237, 0.2);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background-color: #6d28d9;
+      box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+    }
+
+    /* Shadcn Outline Button styling */
+    .btn-outline {
+      background-color: #ffffff;
+      border-color: #e4e4e7;
+      color: #27272a;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+
+    .btn-outline:hover:not(:disabled) {
+      background-color: #f4f4f5;
+      border-color: #d4d4d8;
+    }
+
+    .btn-check-key {
+      padding: 8px 12px;
+    }
+
+    /* Key verification status */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+      min-height: 18px;
+    }
+
+    .key-preview {
+      font-size: 0.72rem;
+      color: #71717a;
+      font-family: monospace;
+      font-weight: 600;
+    }
+
+    #test-result {
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .test-result-success { color: #16a34a; }
+    .test-result-error   { color: #dc2626; }
+    .test-result-loading { color: #2563eb; }
+
+    /* Helper Texts */
+    .card-description {
+      font-size: 0.78rem;
+      color: #71717a;
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+
+    .meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      gap: 8px;
+    }
+
+    .meta-text {
+      font-size: 0.72rem;
+      color: #71717a;
+      font-weight: 500;
+      margin: 0;
+      line-height: 1.3;
+    }
+
+    /* Switch Component */
+    .switch-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+    }
+
+    .switch-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #27272a;
+      cursor: pointer;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 38px;
+      height: 22px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #e4e4e7;
+      transition: .2s;
+      border-radius: 9999px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 16px;
+      width: 16px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    }
+
+    input:checked + .slider {
+      background-color: #7c3aed;
+    }
+
+    input:focus + .slider {
+      box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.4);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(16px);
+    }
+  </style>
 </head>
 
-<body class="butterfly-popup">
-  <div class="popup-container">
-    <h2>Butterfly Settings <span class="version" id="version"></span></h2>
-    <div class="settings-section">
-      <h3>Google Gemini AI</h3>
-      <div class="api-key-row">
-        <label for="api-key">
-          <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--text);">API Key:</a><br>
-          <a href="https://aistudio.google.com/usage" target="_blank" style="color:var(--text); font-size: 0.85em;">(usage)</a>
-        </label>
-        <div class="api-key-input-wrapper">
-          <input type="password" id="api-key" placeholder="Paste your Gemini API key here">
-          <div class="api-key-status">
-            <span id="api-key-preview"></span>
-            <button id="test-api-key" class="test-btn" style="display:none;">check</button>
-            <span id="test-result" class="test-result"></span>
-          </div>
-        </div>
-      </div>
-      
-      <div class="model-picker-row">
-        <label for="model-picker">Model:</label>
-        <select id="model-picker">
-          <option value="flash">Flash (free)</option>
-          <option value="pro">Pro (paid)</option>
-        </select>
-      </div>
+<body>
+
+  <!-- Header -->
+  <div class="app-header">
+    <span class="app-logo">🦋</span>
+    <div class="header-info">
+      <div class="app-title">Butterfly</div>
+      <div class="app-tagline">AI comments in your voice</div>
     </div>
-    
-    <!-- Platform Settings Section -->
-    <div class="platform-settings-section">
-      <div class="divider"></div>
-      <h3>Enabled Platforms</h3>
-      <div class="platform-checkboxes">
-        <div class="platform-checkbox">
-          <input type="checkbox" id="platform-linkedin" checked>
-          <label for="platform-linkedin">LinkedIn</label>
-        </div>
-        <div class="platform-checkbox">
-          <input type="checkbox" id="platform-producthunt" checked>
-          <label for="platform-producthunt">Product Hunt</label>
-        </div>
-        <div class="platform-checkbox">
-          <input type="checkbox" id="platform-reddit" checked>
-          <label for="platform-reddit">Reddit (old.reddit.com)</label>
-        </div>
-        <div class="platform-checkbox">
-          <input type="checkbox" id="platform-twitter">
-          <label for="platform-twitter">Twitter/X (experimental)</label>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Prompts Section -->
-    <div class="prompts-section">
-      <div class="divider"></div>
-      <h3>Prompts</h3>
-      <div class="prompt-tabs">
-        <button class="tab-btn active" data-tab="linkedin">LinkedIn</button>
-        <button class="tab-btn" data-tab="producthunt">Product Hunt</button>
-        <button class="tab-btn" data-tab="reddit">Reddit</button>
-        <button class="tab-btn" data-tab="twitter">Twitter/X</button>
-      </div>
-      <div class="tab-content">
-        <div class="tab-pane active" id="tab-linkedin">
-          <textarea class="prompt-textarea" id="linkedin-prompt" rows="7" placeholder="Enter LinkedIn prompt...">Write a single, concise, professional congratulatory comment for this LinkedIn post. Use simple, clear language. Only output the final comment — do not include options, explanations, formatting, or any extra text. Include author's name in the comment. IMPORTANT: You MUST write your response in the SAME LANGUAGE as the original post. If the post is in Russian, write in Russian. If in Spanish, write in Spanish. If in English, write in English. Match the language exactly.</textarea>
-          <button class="reset-prompt-btn" data-platform="linkedin" style="display:none;">Reset to Default</button>
-        </div>
-        <div class="tab-pane" id="tab-producthunt">
-          <textarea class="prompt-textarea" id="producthunt-prompt" rows="7" placeholder="Enter Product Hunt prompt...">Write a single, concise, and engaging comment for this Product Hunt post. The comment should be supportive of the product and its creator(s). Use simple, clear language. The comment could highlight a cool feature, ask a question, or express excitement. Only output the final comment — no extra text, options, or formatting. If appropriate and known, mention the product name or the creator's name. IMPORTANT: You MUST write your response in the SAME LANGUAGE as the original post. If the post is in French, write in French. If in Russian, write in Russian. If in English, write in English. Match the language exactly.</textarea>
-          <button class="reset-prompt-btn" data-platform="producthunt" style="display:none;">Reset to Default</button>
-        </div>
-        <div class="tab-pane" id="tab-reddit">
-          <textarea class="prompt-textarea" id="reddit-prompt" rows="7" placeholder="Enter Reddit prompt...">Write a single, concise, thoughtful comment for this Reddit post or comment. Be conversational and authentic using simple, clear language. Only output the final comment — no extra text, options, or formatting. IMPORTANT: You MUST write your response in the SAME LANGUAGE as the original post. If the post is in German, write in German. If in Spanish, write in Spanish. If in English, write in English. Match the language exactly.</textarea>
-          <button class="reset-prompt-btn" data-platform="reddit" style="display:none;">Reset to Default</button>
-        </div>
-        <div class="tab-pane" id="tab-twitter">
-          <textarea class="prompt-textarea" id="twitter-prompt" rows="7" placeholder="Enter Twitter/X prompt...">Write a single, concise, engaging comment for this Twitter/X post. Be conversational and authentic using simple, clear language. Keep it brief and relevant to the topic. Only output the final comment — no extra text, options, or formatting. IMPORTANT: You MUST write your response in the SAME LANGUAGE as the original post. If the post is in Japanese, write in Japanese. If in Russian, write in Russian. If in English, write in English. Match the language exactly.</textarea>
-          <button class="reset-prompt-btn" data-platform="twitter" style="display:none;">Reset to Default</button>
-        </div>
-      </div>
-      <div class="question-toggle">
-        <input type="checkbox" id="end-with-question" />
-        <label for="end-with-question">End comments with a question</label>
-      </div>
-      <div class="tone-selector-container">
-        <label for="tone-selector">Comment tone:</label>
-        <select id="tone-selector">
-          <option value="none">None (Default)</option>
-          <option value="friendly">Friendly</option>
-          <option value="excited">Excited</option>
-          <option value="reflective">Reflective</option>
-          <option value="bold">Bold</option>
-          <option value="provocative">Provocative</option>
-          <option value="funny">Funny</option>
-          <option value="empathetic">Empathetic</option>
-          <option value="doomed">Doomed</option>
-          <option value="direct">Direct & No-fluff</option>
-          <option value="pushback">Friendly Pushback</option>
-          <option value="socratic">Socratic Probe</option>
-          <option value="builder">Builder Mode</option>
-          <option value="challenger">Challenger</option>
-          <option value="christmas">Christmas 🎄</option>
-        </select>
-      </div>
-      <div class="length-slider-container">
-        <label for="length-slider">Comment length:</label>
-        <div class="slider-wrapper">
-          <input type="range" id="length-slider" min="0" max="2" value="1" />
-          <div class="slider-labels">
-            <span>Short</span>
-            <span>Medium</span>
-            <span>Long</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Rating and Chrome Web Store Link -->
-    <div class="rating-section">
-      <div class="divider"></div>
-      <p class="rating-text">Enjoying Butterfly? Rate us!</p>
-      <div class="star-rating">
-        <span class="star" data-value="1">&#9733;</span>
-        <span class="star" data-value="2">&#9733;</span>
-        <span class="star" data-value="3">&#9733;</span>
-        <span class="star" data-value="4">&#9733;</span>
-        <span class="star" data-value="5">&#9733;</span>
-      </div>
-      <a href="https://chromewebstore.google.com/detail/butterfly/glnbimhldddbgjpoeohaogmhfmkfjbop" 
-         target="_blank" 
-         class="webstore-link">
-        View in Chrome Web Store
-      </a>
-      <div class="footer-links">
-        <a href="https://github.com/sundai-club/butterfly/issues" 
-           target="_blank" 
-           class="issues-link">
-          Report Issues
-        </a>
-        <span class="separator">•</span>
-        <a href="https://sundai.club" 
-           target="_blank" 
-           class="sundai-link">
-          Built at MIT Sundai Club
-        </a>
-      </div>
-    </div>
-    
-    <script src="popup.js"></script>
   </div>
+
+  <div class="main-container">
+
+    <!-- API Key Card -->
+    <div class="card">
+      <div class="card-header">
+        <span>🔑 Gemini API Key</span>
+        <a href="https://aistudio.google.com/apikey" target="_blank" class="card-link">Get free key &rarr;</a>
+      </div>
+      <div class="card-body">
+        <div class="input-row">
+          <input type="password" class="form-control" id="api-key" placeholder="Paste your Gemini API key here">
+          <button class="btn btn-outline btn-check-key" id="test-api-key" type="button" style="display:none;">Check</button>
+        </div>
+        <div class="status-row">
+          <span class="key-preview" id="api-key-preview"></span>
+          <span id="test-result"></span>
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label class="form-label">Model</label>
+          
+          <!-- Custom Shadcn Dropdown Select instead of raw HTML select -->
+          <div class="custom-select-container" id="model-picker-container">
+            <button class="custom-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" id="model-select-trigger">
+              <span id="model-select-value">Flash (free tier, recommended)</span>
+              <svg class="chevron-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+            <div class="custom-select-popover" role="listbox" style="display: none;" id="model-select-popover">
+              <div class="custom-select-option selected" data-value="flash" role="option" id="opt-flash">
+                <svg class="check-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Flash (free tier, recommended)</span>
+              </div>
+              <div class="custom-select-option" data-value="pro" role="option" id="opt-pro">
+                <svg class="check-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Pro (paid tier)</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Personal Style Card -->
+    <div class="card">
+      <div class="card-header">
+        <span>✍️ My Writing Style</span>
+      </div>
+      <div class="card-body">
+        <div id="default-style-badge" class="alert-info d-none">
+          <span class="alert-icon">✨</span>
+          <div>
+            <strong>Using built-in default style.</strong> Sync your own comments for a personalized voice.
+          </div>
+        </div>
+        <p class="card-description">
+          Paste <strong>your real past comments</strong> below (one per line). Butterfly will mimic your exact tone, vocabulary, and sentence style.
+        </p>
+        <textarea
+          class="form-control"
+          id="personal-style"
+          rows="8"
+          placeholder="e.g.
+Congrats man, well deserved!
+This is huge. What's the plan for scaling?
+Been saying this for a while, glad someone finally put it out there.
+Real talk, most people sleep on this.
+Smart move. Curious how it plays out long term."></textarea>
+        
+        <div class="meta-row">
+          <div class="meta-text" id="sync-meta">The more examples, the more accurate the style match.</div>
+          <button class="btn btn-outline" id="sync-linkedin" type="button" style="padding: 5px 10px; font-size: 0.75rem;">
+            🔄 Sync from LinkedIn
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Platform Toggle Card -->
+    <div class="card">
+      <div class="card-body" style="padding: 12px 16px;">
+        <div class="switch-container">
+          <label class="switch-label" for="platform-linkedin">Enable on LinkedIn</label>
+          <label class="switch">
+            <input type="checkbox" id="platform-linkedin" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 
 </html>

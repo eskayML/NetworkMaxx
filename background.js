@@ -1,628 +1,443 @@
-// background.js - Handles Gemini API requests
+// background.js — Butterfly service worker
 
 const DEFAULT_MODEL_MODE = 'flash';
 const MODEL_CHAINS = {
   flash: [
-    'gemini-3.5-flash',
-    'gemini-3.1-flash-lite-preview',
-    'gemini-3-flash-preview',
     'gemini-2.5-flash',
-    'gemini-2.5-flash-lite'
+    'gemini-2.0-flash-exp',
+    'gemini-1.5-flash'
   ],
   pro: [
-    'gemini-3.1-pro-preview',
-    'gemini-2.5-pro'
+    'gemini-2.5-pro',
+    'gemini-1.5-pro'
   ]
 };
-const MAX_TRANSIENT_RETRIES_PER_MODEL = 2;
+const MAX_TRANSIENT_RETRIES = 2;
 const TRANSIENT_RETRY_DELAYS_MS = [700, 1600];
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 const GEMINI_MODEL_COOLDOWNS = new Map();
-const GEMINI_MODEL_REQUESTS = new Map();
-const MODEL_ALIASES = {
-  'gemini-3.1-flash-lite': 'gemini-3.1-flash-lite-preview',
-  'gemini-3-pro-preview': 'gemini-3.1-pro-preview'
-};
-const DEFAULT_ENABLED_PLATFORMS = {
-  linkedin: true,
-  twitter: false,
-  producthunt: true,
-  reddit: true
-};
 
-// Load slop lists
-let slopWords = [];
-let slopBigrams = [];
-let slopTrigrams = [];
+// ─── Default style samples ────────────────────────────────────────────────────
+// These are real, cleaned human comments used as the style fallback when a user
+// hasn't synced their own writing style yet. Names and identifiers have been stripped.
 
-async function loadSlopLists() {
-  try {
-    const [wordsResponse, bigramsResponse, trigramsResponse] = await Promise.all([
-      fetch(chrome.runtime.getURL('slop_list.json')),
-      fetch(chrome.runtime.getURL('slop_list_bigrams.json')),
-      fetch(chrome.runtime.getURL('slop_list_trigrams.json'))
-    ]);
-    
-    // Each item in slop_list.json is an array with a single word, so we need to flatten twice
-    const wordsData = await wordsResponse.json();
-    slopWords = wordsData.map(arr => arr[0]); // Extract the first element from each sub-array
-    
-    const bigramsData = await bigramsResponse.json();
-    slopBigrams = bigramsData.map(bigram => bigram.join(' '));
-    
-    const trigramsData = await trigramsResponse.json();
-    slopTrigrams = trigramsData.map(trigram => trigram.join(' '));
-    
-    console.log('[Butterfly] Loaded slop lists:', {
-      words: slopWords.length,
-      bigrams: slopBigrams.length,
-      trigrams: slopTrigrams.length
-    });
-  } catch (error) {
-    console.error('Failed to load slop lists:', error);
-  }
-}
+const DEFAULT_STYLE_SAMPLES = [
+  "nah I'd win",
+  "Being paranoid about duplicate uuid is genuinely hilarious It's almost as difficult as randomly entering someone else wallet key phrase I'm guessing using maybe sha256 might just be better to make the chances of duplicates even more slimmer",
+  "That's why humans are superior",
+  "Im curious what memory system you use though?",
+  "This is why we need open source models to catch up",
+  "Damn🤣",
+  "Testing as a practice is pretty much more relevant than ever nowadays",
+  "Chameleon🤣",
+  "Rip 💔",
+  "Actually 2 programmers can do in 6 months",
+  "To be fair it's all about perceived value And who has the highest impact on the business outcomes of the organization",
+  "Rooting for it Biggest bottleneck would probably be navigating the web and bypassing all the antibot preventions that have existed for decades",
+  "congrats on the new role!!",
+  "yay congrats! 🙂",
+  "woohoo!!",
+  "Yayyy !!!!! 🎉",
+  "R E G A L",
+  "🚀 let's go!!!!",
+  "congrats!!!!!! 🔥🔥🔥🔥",
+  "Valid crash-out tbh",
+  "The map integration gives it that scifi vibe😅",
+  "Perhaps you should ask AI to fix your responsive layout.",
+  "LLM is faster, and good enough. It does not need to be the best.",
+  "From a computer science perspective, the architecture behind human beings is vastly superior to the architecture behind LLMs.",
+  "SDD-Strawberry Driven Development",
+  "our brains are so small yet so incredibly powerful",
+  "The intelligence per watt ratio of humans is truly fascinating.",
+  "Haven't tried out foundry Does it integrate well with other libraries like crew ai",
+  "This is very true You become the person that achieves it before even achieving the goal",
+  "Im curious about how such a system could be properly guardrailed to prevent it from accessing unintended info It seems to have so much freedom than traditional RAG",
+  "Threats usually work well for me though Maybe you aren't threatening it well enough",
+  "Excited to see what youll be sharing",
+  "The agent that does no work being the most valuable is the insight. Orchestration without reflection just scales the drift. What keeps breaking? What did we learn? is the loop most setups are missing. Teams add doers; they don't add a critic.",
+  "the one tool rarely fits every team point stuck with me. you're not just picking different tools, you're actually picking different workflows per team because their code maturity, review culture, and risk tolerance are all over the map. that's the real coordination problem.",
+  "software development is still a team sport, even with AI. The tools are the easy part. The culture and the process change is where the real work is.",
+  "Recently built an agentic system that helped a client who owns a solar company automatically perform dm follow-ups and also do things like load estimation, that uses computer vision to calculate what inverter and battery size is right for customers based on their appliances",
+  "Deepseek OCR + Gemini, for image understanding",
+  "How does this differ from what already exists?",
+  "now imagine the power of a whole team",
+  "Better work ethic than 99% of LinkedIn",
+  "I'm a pretty big fan of UUIDv7. You get db-friendly sequential sorting while effectively isolating all collision risk to a single millisecond window.",
+  "i support this message",
+  "I use it for my own posts 😉",
+  "Stand proud",
+  "how random",
+  "Congrats 🔥",
+];
 
-// Load slop lists when extension starts
-loadSlopLists();
+// ─── Message listener ────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'GEMINI_SUGGEST') {
-    const { site, postText, postAuthor, refinement, currentComment } = message; // Added site
-    // Get API key, model, custom prompts, endWithQuestion, commentLength, tone, and platform settings from storage
-    chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'customPrompts', 'endWithQuestion', 'commentLength', 'enabledPlatforms', 'commentTone'], (result) => {
-      const apiKey = result.geminiApiKey;
-      const modelMode = normalizeModelMode(result.geminiModel);
-      const customPrompts = result.customPrompts || {};
-      const endWithQuestion = result.endWithQuestion || false;
-      const commentLength = result.commentLength !== undefined ? result.commentLength : 1; // Default to medium
-      const commentTone = result.commentTone || 'none';
-      
-      // Check if platform is enabled
-      const enabledPlatforms = {
-        ...DEFAULT_ENABLED_PLATFORMS,
-        ...(result.enabledPlatforms || {})
-      };
-      
-      if (!enabledPlatforms[site]) {
-        sendResponse({ disabled: true });
-        return;
-      }
-      
-      if (!apiKey) {
-        sendResponse({ error: '🦋 Welcome to Butterfly! To get started:\n1. Click the Butterfly extension icon (🦋) in your browser toolbar\n2. Get a free API key from Google AI Studio (link provided)\n3. Paste your API key in the settings\n4. Start generating AI comments!' });
-        return;
-      }
-      // Pass model mode, customPrompts, endWithQuestion, commentLength, and commentTone to fetchGeminiSuggestion
-      fetchGeminiSuggestions(site, postText, postAuthor, apiKey, modelMode, refinement, currentComment, customPrompts, endWithQuestion, commentLength, commentTone)
-        .then((result) => {
-          console.log('[Butterfly] Generated result:', result);
-          if (!result || !result.suggestions || result.suggestions.length === 0) {
-            console.error('[Butterfly] No suggestions generated - API returned empty');
-            sendResponse({ error: 'No suggestions generated. Please check your API key.' });
-          } else {
-            sendResponse({ suggestions: result.suggestions, debugPrompt: result.debugPrompt });
-          }
-        })
-        .catch((e) => {
-          console.error('Gemini API error:', e);
-          let errorMessage = 'Failed to generate comment';
-          if (e && e.message) {
-            errorMessage = e.message;
-            // Check for common API key issues
-            if (e.message.includes('API_KEY_INVALID') || e.message.includes('403')) {
-              errorMessage = 'Invalid Gemini API key.\n\nWhat to do:\n1. Click the Butterfly extension icon in your browser toolbar.\n2. Paste a valid key from Google AI Studio.\n3. Click "check" and try again.';
-            } else if (isGeminiRateLimitedError(e)) {
-              const retryAfterText = formatRetryAfter(e.retryAfterMs);
-              errorMessage = `Gemini quota or rate limit reached.${retryAfterText ? `\n\nTry again in about ${retryAfterText}.` : ''}\n\nWhat to do:\n1. Wait and click "Suggest Comment" again.\n2. If this keeps happening, open Butterfly settings and switch between Flash (free) and Pro (paid).\n3. Check your usage in Google AI Studio.`;
-            } else if (isTransientGeminiError(e)) {
-              errorMessage = 'Gemini is temporarily unavailable.\n\nWhat to do:\n1. Click "Suggest Comment" again in a moment.\n2. If it keeps failing, open Butterfly settings and switch between Flash (free) and Pro (paid).\n3. Check Google AI Studio status/usage if the issue persists.';
-            } else if (e.message.includes('400')) {
-              errorMessage = 'Gemini rejected this request.\n\nWhat to do:\n1. Open Butterfly settings.\n2. Switch to a different model.\n3. Try generating again.';
-            }
-          }
-          sendResponse({ error: errorMessage });
-        });
-    });
-    return true; // Keep message channel open for async
-  }
+  if (message.type !== 'GEMINI_SUGGEST') return;
+
+  const { postText, postAuthor, refinement, currentComment } = message;
+
+  chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enabledPlatforms'], (result) => {
+    const apiKey = result.geminiApiKey;
+    const modelMode = normalizeModelMode(result.geminiModel);
+    // Fall back to bundled default samples when user hasn't synced their own style yet
+    const personalStyle = (result.personalStyle && result.personalStyle.trim())
+      ? result.personalStyle.trim()
+      : DEFAULT_STYLE_SAMPLES.join('\n');
+    const enabledPlatforms = result.enabledPlatforms || { linkedin: true };
+
+    if (!enabledPlatforms.linkedin) {
+      sendResponse({ disabled: true });
+      return;
+    }
+
+    if (!apiKey) {
+      sendResponse({ error: '🦋 Open Butterfly settings and paste your Gemini API key to get started.' });
+      return;
+    }
+
+    fetchSuggestions(postText, postAuthor, apiKey, modelMode, personalStyle, refinement, currentComment)
+      .then(res => {
+        if (!res?.suggestions?.length) {
+          sendResponse({ error: 'No suggestions generated. Please try again.' });
+        } else {
+          sendResponse({ suggestions: res.suggestions, debugPrompt: res.debugPrompt });
+        }
+      })
+      .catch(e => {
+        let msg = 'Failed to generate comment. Try again.';
+        if (e?.message?.includes('403') || e?.message?.includes('API_KEY_INVALID')) {
+          msg = 'Invalid API key. Check your Butterfly settings.';
+        } else if (e?.status === 429) {
+          msg = 'Rate limit hit. Wait a moment and try again.';
+        }
+        sendResponse({ error: msg });
+      });
+  });
+
+  return true; // keep channel open for async response
 });
 
-// Generate instruction to avoid slop words
-function getSlopWordsInstruction() {
-  if (slopWords.length === 0 && slopBigrams.length === 0 && slopTrigrams.length === 0) {
-    console.log('[Butterfly] Slop lists not loaded yet');
-    return ''; // Return empty if lists haven't loaded yet
-  }
-  
-  console.log('[Butterfly] Adding slop words instruction with:', {
-    words: slopWords.length,
-    bigrams: slopBigrams.length,
-    trigrams: slopTrigrams.length
-  });
-  
-  // Include ALL words/phrases in the prompt
-  const allWords = slopWords.join(', ');
-  const allBigrams = slopBigrams.join(', ');
-  const allTrigrams = slopTrigrams.join(', ');
-  
-  let instruction = '\n\nIMPORTANT: Avoid using ANY of these overused or clichéd words and phrases. Write in a natural, authentic voice using simple, clear language without these AI-writing patterns.';
-  
-  if (slopWords.length > 0) {
-    instruction += `\n\nForbidden single words: ${allWords}`;
-  }
-  
-  if (slopBigrams.length > 0) {
-    instruction += `\n\nForbidden two-word phrases: ${allBigrams}`;
-  }
-  
-  if (slopTrigrams.length > 0) {
-    instruction += `\n\nForbidden three-word phrases: ${allTrigrams}`;
-  }
-  
-  return instruction;
-}
+// ─── Prompt builder ──────────────────────────────────────────────────────────
 
-function normalizeModelMode(modelModeOrLegacyModel) {
-  const value = typeof modelModeOrLegacyModel === 'string' ? modelModeOrLegacyModel.trim() : '';
-  if (value === 'flash' || value === 'pro') return value;
+function buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment, analysis) {
+  const lines = [];
 
-  const normalizedLegacyModel = MODEL_ALIASES[value] || value;
-  if (MODEL_CHAINS.pro.includes(normalizedLegacyModel)) return 'pro';
-  if (MODEL_CHAINS.flash.includes(normalizedLegacyModel)) return 'flash';
+  lines.push('[POST-AUTHOR]');
+  lines.push(postAuthor || 'Unknown');
+  lines.push('[/POST-AUTHOR]');
+  lines.push('');
+  lines.push('[POST-CONTENT]');
+  lines.push(postText);
+  lines.push('[/POST-CONTENT]');
 
-  return DEFAULT_MODEL_MODE;
-}
-
-function getModelsToTry(modelModeOrLegacyModel) {
-  const modelMode = normalizeModelMode(modelModeOrLegacyModel);
-  return MODEL_CHAINS[modelMode] || MODEL_CHAINS[DEFAULT_MODEL_MODE];
-}
-
-function isModelUnavailableError(error) {
-  if (!error) return false;
-  const message = String(error.message || error).toLowerCase();
-  return error.status === 404 ||
-    message.includes('not found') ||
-    message.includes('not supported for generatecontent') ||
-    message.includes('deprecated') ||
-    message.includes('shut down');
-}
-
-function isTransientGeminiError(error) {
-  if (!error) return false;
-  const message = String(error.message || error).toLowerCase();
-  return error.status === 500 ||
-    error.status === 502 ||
-    error.status === 503 ||
-    error.status === 504 ||
-    message.includes('service is currently unavailable') ||
-    message.includes('temporarily unavailable') ||
-    message.includes('try again later') ||
-    message.includes('overloaded');
-}
-
-function isGeminiRateLimitedError(error) {
-  if (!error) return false;
-  const message = String(error.message || error).toLowerCase();
-  return error.status === 429 ||
-    error.apiCode === 'RESOURCE_EXHAUSTED' ||
-    error.quotaExceeded === true ||
-    message.includes('quota') ||
-    message.includes('rate limit') ||
-    message.includes('resource_exhausted');
-}
-
-function isRetryableModelFailure(error) {
-  return isModelUnavailableError(error) ||
-    isGeminiRateLimitedError(error) ||
-    isTransientGeminiError(error) ||
-    Boolean(error && error.retryNextModel);
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function getModelCooldownKey(apiKey, model) {
-  return `${apiKey || ''}:${model}`;
-}
-
-function setModelCooldown(apiKey, model, retryAfterMs) {
-  const cooldownMs = Math.max(retryAfterMs || 0, DEFAULT_RATE_LIMIT_COOLDOWN_MS);
-  GEMINI_MODEL_COOLDOWNS.set(getModelCooldownKey(apiKey, model), Date.now() + cooldownMs);
-  return cooldownMs;
-}
-
-function getRemainingModelCooldownMs(apiKey, model) {
-  const cooldownUntil = GEMINI_MODEL_COOLDOWNS.get(getModelCooldownKey(apiKey, model)) || 0;
-  const remainingMs = cooldownUntil - Date.now();
-  if (remainingMs <= 0) {
-    GEMINI_MODEL_COOLDOWNS.delete(getModelCooldownKey(apiKey, model));
-    return 0;
-  }
-  return remainingMs;
-}
-
-function createModelCooldownError(model, remainingMs) {
-  const error = new Error(`Gemini model ${model} is rate-limited. Try again in about ${formatRetryAfter(remainingMs)}.`);
-  error.status = 429;
-  error.apiCode = 'RESOURCE_EXHAUSTED';
-  error.quotaExceeded = true;
-  error.retryAfterMs = remainingMs;
-  error.retryNextModel = true;
-  return error;
-}
-
-function getRetryDelayMsFromGeminiError(data) {
-  const details = data && data.error && Array.isArray(data.error.details) ? data.error.details : [];
-  for (const detail of details) {
-    if (detail && typeof detail.retryDelay === 'string') {
-      const parsed = parseRetryDelayMs(detail.retryDelay);
-      if (parsed) return parsed;
-    }
-  }
-
-  const message = data && data.error && data.error.message ? data.error.message : '';
-  const retryMatch = String(message).match(/retry\s+in\s+([\d.]+)\s*s/i);
-  if (retryMatch) return Math.ceil(Number(retryMatch[1]) * 1000);
-
-  return 0;
-}
-
-function hasQuotaFailure(data) {
-  const details = data && data.error && Array.isArray(data.error.details) ? data.error.details : [];
-  return details.some(detail => {
-    return detail &&
-      (String(detail['@type'] || '').includes('QuotaFailure') ||
-        Array.isArray(detail.violations));
-  });
-}
-
-function parseRetryDelayMs(value) {
-  const match = String(value || '').trim().match(/^([\d.]+)s$/i);
-  return match ? Math.ceil(Number(match[1]) * 1000) : 0;
-}
-
-function formatRetryAfter(ms) {
-  if (!ms || ms <= 0) return '';
-  const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
-  if (totalSeconds < 60) return `${totalSeconds} second${totalSeconds === 1 ? '' : 's'}`;
-  const minutes = Math.ceil(totalSeconds / 60);
-  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
-}
-
-function getToneInstruction(commentTone) {
-  const toneInstructions = {
-    'none': '',
-    'friendly': '\n\nIMPORTANT: Write in a warm, friendly, and approachable tone. Be personable and welcoming.',
-    'excited': '\n\nIMPORTANT: Write in an enthusiastic, energetic tone. Show genuine excitement and passion.',
-    'reflective': '\n\nIMPORTANT: Write in a thoughtful, reflective tone. Be contemplative and show deep consideration.',
-    'bold': '\n\nIMPORTANT: Write in a bold, confident tone. Be assertive and direct with strong opinions.',
-    'provocative': '\n\nIMPORTANT: Write in a provocative, thought-provoking tone. Challenge assumptions and spark discussion.',
-    'funny': '\n\nIMPORTANT: Write in a light-hearted, humorous tone. Include wit or clever observations while staying respectful.',
-    'empathetic': '\n\nIMPORTANT: Write in an empathetic, understanding tone. Show compassion and emotional intelligence.',
-    'doomed': '\n\nIMPORTANT: Write in a pessimistic, doom-and-gloom tone. Express skepticism about outcomes and highlight potential problems or inevitable failures. Be cynical but articulate.',
-    'direct': '\n\nIMPORTANT: Be direct and concise. Use short, clear sentences with strong verbs. No hedging words (maybe, perhaps, might). Get straight to the point without fluff or filler.',
-    'pushback': '\n\nIMPORTANT: Acknowledge one good point from the post, then respectfully challenge one assumption or aspect. Offer a constructive alternative or fix. Be friendly but thought-provoking.',
-    'socratic': '\n\nIMPORTANT: Ask 2-3 sharp, thought-provoking questions that dig deeper into the topic. Questions should expose hidden assumptions or unexplored angles. End with suggesting a concrete next step.',
-    'builder': '\n\nIMPORTANT: Focus on action and building. State a clear outcome or goal, list 2-3 concrete steps to achieve it, and give a specific deadline or timeframe. Be motivating and results-oriented.',
-    'challenger': '\n\nIMPORTANT: Set a high bar or ambitious challenge. Be crisp and bold. State what excellence looks like, set a specific date or metric, and inspire action. No wasted words.',
-    'christmas': '\n\nIMPORTANT: Write in a festive, warm Christmas tone. Use cozy, cheerful language and light seasonal imagery without overdoing it.'
-  };
-  
-  if (commentTone && commentTone !== 'none' && toneInstructions[commentTone]) {
-    return toneInstructions[commentTone];
-  }
-  return '';
-}
-
-// Generate multiple suggestions in a single API call
-async function fetchGeminiSuggestions(site = 'linkedin', postText, postAuthor, apiKey, modelMode = DEFAULT_MODEL_MODE, refinement = '', currentComment = '', customPrompts = {}, endWithQuestion = false, commentLength = 1, commentTone = 'none') {
-  const modelsToTry = getModelsToTry(modelMode);
-  let lastError;
-
-  for (const modelToTry of modelsToTry) {
-    try {
-      return await fetchGeminiSuggestionsWithRetry(site, postText, postAuthor, apiKey, modelToTry, refinement, currentComment, customPrompts, endWithQuestion, commentLength, commentTone);
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableModelFailure(error) || modelToTry === modelsToTry[modelsToTry.length - 1]) {
-        throw error;
-      }
-      console.warn(`[Butterfly] Gemini model ${modelToTry} failed, trying fallback model ${modelsToTry[modelsToTry.indexOf(modelToTry) + 1]}`);
-    }
-  }
-
-  throw lastError || new Error('No Gemini model available');
-}
-
-async function fetchGeminiSuggestionsWithRetry(site, postText, postAuthor, apiKey, model, refinement, currentComment, customPrompts, endWithQuestion, commentLength, commentTone) {
-  const requestKey = getModelCooldownKey(apiKey, model);
-  const previousRequest = GEMINI_MODEL_REQUESTS.get(requestKey);
-  if (previousRequest) {
-    try {
-      await previousRequest;
-    } catch (error) {
-      // The next request will re-check cooldown/error state below.
-    }
-  }
-
-  const request = fetchGeminiSuggestionsWithRetryUnlocked(site, postText, postAuthor, apiKey, model, refinement, currentComment, customPrompts, endWithQuestion, commentLength, commentTone);
-  GEMINI_MODEL_REQUESTS.set(requestKey, request);
-
-  try {
-    return await request;
-  } finally {
-    if (GEMINI_MODEL_REQUESTS.get(requestKey) === request) {
-      GEMINI_MODEL_REQUESTS.delete(requestKey);
-    }
-  }
-}
-
-async function fetchGeminiSuggestionsWithRetryUnlocked(site, postText, postAuthor, apiKey, model, refinement, currentComment, customPrompts, endWithQuestion, commentLength, commentTone) {
-  let lastError;
-  const remainingCooldownMs = getRemainingModelCooldownMs(apiKey, model);
-  if (remainingCooldownMs > 0) {
-    throw createModelCooldownError(model, remainingCooldownMs);
-  }
-
-  for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES_PER_MODEL; attempt++) {
-    try {
-      return await fetchGeminiSuggestionsWithModel(site, postText, postAuthor, apiKey, model, refinement, currentComment, customPrompts, endWithQuestion, commentLength, commentTone);
-    } catch (error) {
-      lastError = error;
-      if (!isTransientGeminiError(error) || attempt === MAX_TRANSIENT_RETRIES_PER_MODEL) {
-        throw error;
-      }
-
-      const delayMs = TRANSIENT_RETRY_DELAYS_MS[attempt] || TRANSIENT_RETRY_DELAYS_MS[TRANSIENT_RETRY_DELAYS_MS.length - 1];
-      console.warn(`[Butterfly] Gemini transient error with ${model}; retrying in ${delayMs}ms`, error);
-      await delay(delayMs);
-    }
-  }
-
-  throw lastError || new Error('Gemini request failed');
-}
-
-async function fetchGeminiSuggestionsWithModel(site, postText, postAuthor, apiKey, model, refinement, currentComment, customPrompts, endWithQuestion, commentLength, commentTone) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  
-  console.log('[Butterfly] Making single API call for 4 variants with model:', model, 'for site:', site);
-  
-  // Build the base prompt structure
-  let basePrompt = `[POST-AUTHOR]
-${postAuthor}
-[/POST-AUTHOR]
-
-[POST-CONTENT]
-${postText}
-[/POST-CONTENT]`;
-  
   if (currentComment && currentComment.trim()) {
-    basePrompt += `\n\n[CURRENT-COMMENT]
-${currentComment}
-[/CURRENT-COMMENT]`;
+    lines.push('');
+    lines.push('[CURRENT-COMMENT]');
+    lines.push(currentComment.trim());
+    lines.push('[/CURRENT-COMMENT]');
   }
+
   if (refinement && refinement.trim()) {
-    basePrompt += `\n\n[REFINEMENT-INSTRUCTIONS]
-${refinement}
-[/REFINEMENT-INSTRUCTIONS]`;
+    lines.push('');
+    lines.push('[REFINEMENT]');
+    lines.push(refinement.trim());
+    lines.push('[/REFINEMENT]');
   }
 
-  // Add the main instruction
-  const customPrompt = customPrompts[site];
-  let mainInstruction = '';
-  
-  if (customPrompt && customPrompt.trim()) {
-    mainInstruction = customPrompt;
-  } else {
-    // Original platform-specific logic as fallback
-    if (site === 'producthunt') {
-      let authorReference = '';
-      if (postAuthor && postAuthor.toLowerCase() !== 'maker' && postAuthor.trim() !== '') {
-        authorReference = `The creator's name is '${postAuthor}'. You can refer to them by this name.`;
-      } else {
-        authorReference = `The creator's name was not identified; refer to them as 'the team', 'the creators', or 'the developers'. Do NOT use the word 'Maker' as a generic noun and do not invent a name.`;
-      }
+  // Inject post analysis when available — this is what makes comments contextually relevant
+  if (analysis && analysis.topic && analysis.angles && analysis.angles.length) {
+    lines.push('');
+    lines.push('[POST-ANALYSIS]');
+    lines.push('Core point: ' + analysis.topic);
+    lines.push('Specific angles to react to:');
+    analysis.angles.forEach(function(a, i) { lines.push((i + 1) + '. ' + a); });
+    lines.push('[/POST-ANALYSIS]');
+  }
 
-      if (currentComment && currentComment.trim()) {
-        mainInstruction = `Refine the current comment for this Product Hunt post based on the refinement instructions. Focus on being supportive, insightful, or asking a relevant question. ${authorReference}`;
-      } else {
-        mainInstruction = `Write comments for this Product Hunt post. Each comment should be supportive of the product and its creator(s). ${authorReference} Comments could highlight cool features, ask questions, or express excitement. If appropriate and known, mention the product name or the creator's name.`;
-      }
-    } else if (site === 'twitter') {
-      if (currentComment && currentComment.trim()) {
-        mainInstruction = `Refine the current comment for this Twitter/X post based on the refinement instructions. Keep it conversational and authentic.`;
-      } else {
-        mainInstruction = `Write comments for this Twitter/X post. Be conversational and authentic. Keep them brief and relevant to the topic.`;
-      }
-    } else if (site === 'reddit') {
-      if (currentComment && currentComment.trim()) {
-        mainInstruction = `Refine the current comment for this Reddit post or comment based on the refinement instructions. Keep it conversational and authentic.`;
-      } else {
-        mainInstruction = `Write comments for this Reddit post or comment. Be conversational and authentic. Keep them brief and relevant to the topic.`;
-      }
-    } else { // Default to LinkedIn
-      if (currentComment && currentComment.trim()) {
-        mainInstruction = postAuthor && postAuthor.trim()
-          ? `Refine the current comment based on refinement instructions, keeping it as a congratulatory comment for this LinkedIn post. You may mention ${postAuthor.trim()} if it sounds natural.`
-          : `Refine the current comment based on refinement instructions, keeping it as a congratulatory comment for this LinkedIn post. Do not invent an author name.`;
-      } else {
-        mainInstruction = postAuthor && postAuthor.trim()
-          ? `Write professional congratulatory comments for this LinkedIn post. You may mention ${postAuthor.trim()} if it sounds natural.`
-          : `Write professional congratulatory comments for this LinkedIn post. Do not invent an author name.`;
-      }
+  if (personalStyle && personalStyle.trim()) {
+    lines.push('');
+    lines.push('[MY-PAST-COMMENTS]');
+    lines.push(personalStyle.trim());
+    lines.push('[/MY-PAST-COMMENTS]');
+    lines.push('');
+    lines.push('Those are real comments I wrote. That is your ONLY style reference.');
+    lines.push('Before writing anything, extract from those examples:');
+    lines.push('- How long my sentences are (short? never long?)');
+    lines.push('- Whether I use punctuation casually or formally (ellipses? exclamation marks? no caps?)');
+    lines.push('- My energy level (hype? dry? thoughtful? sarcastic? blunt?)');
+    lines.push('- Whether I ask questions or just state things');
+    lines.push('- Words and phrases I actually use vs ones I never use');
+    lines.push('You must reproduce that voice exactly. Not approximately. Exactly.');
+  } else {
+    lines.push('');
+    lines.push('No style examples provided. Default: casual, short, direct. Write like someone who typed this in 10 seconds.');
+  }
+
+  lines.push('');
+  lines.push('Generate exactly 4 LinkedIn comment variants.');
+
+  if (analysis && analysis.angles && analysis.angles.length) {
+    lines.push('Write one comment per angle from [POST-ANALYSIS]. Each comment must directly address that specific angle.');
+    lines.push('A comment that could apply to ANY post on this topic — without reading the actual post — is a failure. Reject and rewrite it.');
+  }
+
+  lines.push('');
+  lines.push('WHAT MAKES AI COMMENTS INSTANTLY OBVIOUS — never do any of this:');
+  lines.push('- Opening with unsolicited praise: "Great post!", "Love this!", "Such an insightful share!", "This is so powerful", "What a read!"');
+  lines.push('- Performative enthusiasm: "I love how you...", "This truly resonates...", "What a journey!", "So proud of you!"');
+  lines.push('- Generic encouragement that fits any post ever written: "Keep going!", "You\'ve got this!", "So inspiring!"');
+  lines.push('- Restating what the post said, then calling it profound or timely');
+  lines.push('- Fake personal anecdotes with zero specifics: "I\'ve experienced this too and it changed everything for me"');
+  lines.push('- Em dashes used for effect to manufacture thoughtfulness');
+  lines.push('- Hollow closing questions: "What do you think?", "Would love your thoughts!", "Anyone else feel this way?"');
+  lines.push('- Corporate vocabulary: leverage, synergy, ecosystem, paradigm, impactful, journey, space, game-changer, authentic, intentional, unpack, foster, navigate, pivot');
+  lines.push('- Opening templates: "As someone who...", "In today\'s world...", "We often forget that...", "This is a reminder that..."');
+  lines.push('- Any sentence that could be copy-pasted onto a completely different post');
+  lines.push('');
+  lines.push('WHAT REAL HUMAN COMMENTS LOOK LIKE:');
+  lines.push('- They react to something SPECIFIC — a detail, a claim, a number, a decision — not the post in abstract');
+  lines.push('- They are short — real people do not write essays in comment sections');
+  lines.push('- They have a point of view, even if mild — agree, disagree, add context, or acknowledge something concisely');
+  lines.push('- They feel typed quickly, not composed carefully');
+  lines.push('- They do not explain themselves or over-justify their reaction');
+  lines.push('');
+  lines.push('MANDATORY SELF-CHECK: Before finalizing each comment, ask — "Could someone have written this without reading the post?" If yes: reject and rewrite. "Does this sound like an AI trying to be supportive?" If yes: reject and rewrite.');
+  lines.push('');
+  lines.push('Match the post language exactly (French post -> French reply, Spanish -> Spanish, etc.).');
+  lines.push('Never start with the author\'s name.');
+  lines.push('Each of the 4 variants must take a clearly different angle, not just rephrase the same thought.');
+  lines.push('');
+  lines.push('Return ONLY valid JSON, no markdown, no explanation:');
+  lines.push('{"suggestions":["comment1","comment2","comment3","comment4"]}');
+
+  return lines.join('\n');
+}
+
+// ─── API call chain ───────────────────────────────────────────────────────────
+
+async function fetchSuggestions(postText, postAuthor, apiKey, modelMode, personalStyle, refinement, currentComment) {
+  const models = MODEL_CHAINS[modelMode] || MODEL_CHAINS[DEFAULT_MODEL_MODE];
+  let lastError;
+
+  for (const model of models) {
+    try {
+      return await fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment);
+    } catch (err) {
+      lastError = err;
+      if (!isRetryable(err) || model === models[models.length - 1]) throw err;
+      console.warn('[Butterfly] ' + model + ' failed, trying next model...');
     }
   }
+  throw lastError || new Error('All models exhausted');
+}
 
-  // Build the full prompt requesting 4 variants
-  let prompt = basePrompt + '\n\n' + mainInstruction;
-  prompt += '\n\nIMPORTANT: Generate exactly 4 different comment variants. Each should be unique and varied in style while following the instructions. Return only JSON matching this shape: {"suggestions":["first comment","second comment","third comment","fourth comment"]}. Do not include markdown, numbering, or explanations.';
-  
-  // Add slop words avoidance
-  prompt += getSlopWordsInstruction();
-  
-  // Add tone instruction
-  prompt += getToneInstruction(commentTone);
-  
-  // Add length instruction
-  const lengthInstructions = [
-    '\n\nVERY IMPORTANT: Keep each comment very brief and extra concise - maximum very short 1 sentence.',
-    '', // Medium length - no additional instruction needed
-    '\n\nVERY IMPORTANT: Write more detailed, thoughtful comments that are at least 3-4 sentences long each. Provide more context and depth.'
-  ];
-  if (commentLength !== 1) {
-    prompt += lengthInstructions[commentLength];
-  }
-  
-  // Add question instruction
-  if (endWithQuestion) {
-    prompt += '\n\nIMPORTANT: End each comment with a relevant, thoughtful, tone and style-appropriate question to encourage further discussion.';
+async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment) {
+  const cooldown = getCooldown(apiKey, model);
+  if (cooldown > 0) {
+    const err = new Error('Rate limited on ' + model + '. Retrying with fallback.');
+    err.status = 429;
+    err.retryNextModel = true;
+    throw err;
   }
 
-  prompt += '\n\nIMPORTANT: Never output template placeholders such as [POST-AUTHOR], [AUTHOR], [NAME], or similar bracketed placeholders. If an author name is unknown, write the comment without a name.';
-  
-  // Log the full prompt for debugging
-  console.log('[Butterfly] Executing prompt for 4 variants:', prompt);
-  
+  let lastError;
+  for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+    try {
+      return await callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment);
+    } catch (err) {
+      lastError = err;
+      if (!isTransient(err) || attempt === MAX_TRANSIENT_RETRIES) throw err;
+      console.warn('[Butterfly] Transient error on attempt ' + (attempt + 1) + ', retrying in ' + TRANSIENT_RETRY_DELAYS_MS[attempt] + 'ms');
+      await delay(TRANSIENT_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
+
+// ─── Post analysis (Call 1 of 2) ─────────────────────────────────────────────
+// Extracts specific reaction angles from the post so comments aren't generic.
+// Failure here is non-fatal — we fall back to single-call mode.
+
+async function analyzePost(postText, postAuthor, apiKey, model) {
+  const lines = [];
+  lines.push('[POST-AUTHOR]');
+  lines.push(postAuthor || 'Unknown');
+  lines.push('[/POST-AUTHOR]');
+  lines.push('');
+  lines.push('[POST-CONTENT]');
+  lines.push(postText);
+  lines.push('[/POST-CONTENT]');
+  lines.push('');
+  lines.push('Read this LinkedIn post carefully. Extract what a real person would actually react to.');
+  lines.push('');
+  lines.push('1. Summarise in one sentence: what SPECIFICALLY is being said/announced/claimed? (not just the topic)');
+  lines.push('2. Identify 4 distinct reaction angles tied directly to specific details in this post.');
+  lines.push('');
+  lines.push('BAD angles (too vague, apply to any post):');
+  lines.push('- "You could congratulate them on their achievement"');
+  lines.push('- "Ask about their plans for the future"');
+  lines.push('- "Share your thoughts on the topic"');
+  lines.push('');
+  lines.push('GOOD angles (post-specific, tied to actual content):');
+  lines.push('- "Push back on the claim that X is the bottleneck — in practice Y causes more failures"');
+  lines.push('- "React to the specific number/metric they mentioned and what it implies"');
+  lines.push('- "Add a missing context that changes how you read their conclusion"');
+  lines.push('- "Express genuine curiosity about a specific decision or tradeoff they mentioned"');
+  lines.push('- "Agree with the core point but flag an edge case they didn\'t address"');
+  lines.push('- "Short dry reaction to the most surprising or counterintuitive thing in the post"');
+  lines.push('');
+  lines.push('Return ONLY valid JSON:');
+  lines.push('{"topic":"one specific sentence","angles":["angle1","angle2","angle3","angle4"]}');
+
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: lines.join('\n') }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: {
+          type: 'object',
+          properties: {
+            topic:  { type: 'string' },
+            angles: { type: 'array', items: { type: 'string' } }
+          },
+          required: ['topic', 'angles']
+        }
+      }
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error((data && data.error && data.error.message) || 'HTTP ' + res.status);
+
+  const raw = (data.candidates &&
+    data.candidates[0] &&
+    data.candidates[0].content &&
+    data.candidates[0].content.parts &&
+    data.candidates[0].content.parts[0] &&
+    data.candidates[0].content.parts[0].text) || '';
+
+  const parsed = JSON.parse(raw.trim());
+  if (!parsed.topic || !Array.isArray(parsed.angles) || !parsed.angles.length) {
+    throw new Error('Malformed analysis response');
+  }
+  return parsed;
+}
+
+// ─── Main Gemini call (Call 2 of 2) ─────────────────────────────────────────
+
+async function callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment) {
+  console.log('[Butterfly] Step 1 — analyzing post with ' + model);
+
+  // Call 1: Understand the post deeply
+  let analysis = null;
   try {
-    const body = JSON.stringify({
+    analysis = await analyzePost(postText, postAuthor, apiKey, model);
+    console.log('[Butterfly] Post topic:', analysis.topic);
+    console.log('[Butterfly] Angles:', analysis.angles);
+  } catch (e) {
+    console.warn('[Butterfly] Post analysis failed (' + e.message + ') — falling back to single-call mode');
+  }
+
+  console.log('[Butterfly] Step 2 — generating styled comments with ' + model);
+
+  const prompt = buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment, analysis);
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         responseMimeType: 'application/json',
         responseJsonSchema: {
           type: 'object',
           properties: {
-            suggestions: {
-              type: 'array',
-              items: { type: 'string' }
-            }
+            suggestions: { type: 'array', items: { type: 'string' } }
           },
           required: ['suggestions']
         }
       }
-    });
-    
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body
-    });
-    
-    let data;
-    try {
-      data = await res.json();
-    } catch (e) {
-      console.error('[Butterfly] Failed to parse API response:', e);
-      throw new Error('Could not parse Gemini API response');
+    })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    const msg = (data && data.error && data.error.message) ? data.error.message : ('HTTP ' + res.status);
+    const err = new Error(msg);
+    err.status = res.status;
+    if (res.status === 429) {
+      setCooldown(apiKey, model);
+      err.retryNextModel = true;
     }
-    
-    if (!res.ok) {
-      console.error('[Butterfly] API error response:', JSON.stringify(data, null, 2));
-      let errorMessage = 'HTTP ' + res.status;
-      if (data && data.error) {
-        if (typeof data.error === 'string') {
-          errorMessage = data.error;
-        } else if (data.error.message) {
-          errorMessage = data.error.message;
-        } else if (data.error.code) {
-          errorMessage = `Error code: ${data.error.code}`;
-        }
-      }
-      const error = new Error(errorMessage);
-      error.status = res.status;
-      error.apiCode = data && data.error && data.error.status;
-      error.quotaExceeded = res.status === 429 || hasQuotaFailure(data);
-      error.retryAfterMs = getRetryDelayMsFromGeminiError(data);
-      if (isGeminiRateLimitedError(error)) {
-        error.retryAfterMs = setModelCooldown(apiKey, model, error.retryAfterMs);
-        error.retryNextModel = true;
-      }
-      throw error;
-    }
-    
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log('[Butterfly] API response received, parsing variants');
-    
-    const suggestions = parseGeminiSuggestions(responseText);
-    if (suggestions.length === 0) {
-      const error = new Error(`No suggestions generated by ${model}`);
-      error.retryNextModel = true;
-      throw error;
-    }
-    
-    console.log('[Butterfly] Parsed', suggestions.length, 'suggestions from response');
-    console.log('[Butterfly] Returning suggestions object:', { suggestions, debugPrompt: prompt });
-    return { suggestions, debugPrompt: prompt, model };
-    
-  } catch (error) {
-    console.error('[Butterfly] Error generating suggestions:', error);
-    throw error;
+    throw err;
   }
+
+  const text = (data.candidates &&
+    data.candidates[0] &&
+    data.candidates[0].content &&
+    data.candidates[0].content.parts &&
+    data.candidates[0].content.parts[0] &&
+    data.candidates[0].content.parts[0].text) || '';
+
+  const suggestions = parseSuggestions(text);
+
+  if (!suggestions.length) {
+    const err = new Error('Empty suggestions from ' + model);
+    err.retryNextModel = true;
+    throw err;
+  }
+
+  console.log('[Butterfly] Got ' + suggestions.length + ' suggestions from ' + model);
+  return { suggestions: suggestions, debugPrompt: prompt };
 }
 
-function parseGeminiSuggestions(responseText) {
-  const text = (responseText || '').trim();
-  if (!text) return [];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-  const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-  const parsedSuggestions = parseSuggestionsFromJson(jsonText);
-  if (parsedSuggestions.length > 0) return parsedSuggestions;
-
-  const suggestions = [];
-  const lines = text.split('\n');
-
-  for (const line of lines) {
-    const match = line.match(/^\s*(?:\d+[\.\)]|[-*])\s*(.+)/);
-    if (match && match[1]) {
-      addUniqueSuggestion(suggestions, match[1]);
-    }
-  }
-
-  if (suggestions.length === 0) {
-    const parts = text.split(/\n\n+/).filter(s => s.trim());
-    for (const part of parts) {
-      addUniqueSuggestion(suggestions, part.replace(/^\s*\d+[\.\)]\s*/, ''));
-    }
-  }
-
-  if (suggestions.length === 0) {
-    addUniqueSuggestion(suggestions, text);
-  }
-
-  return suggestions;
-}
-
-function parseSuggestionsFromJson(jsonText) {
+function parseSuggestions(text) {
   try {
-    const parsed = JSON.parse(jsonText);
-    if (Array.isArray(parsed)) {
-      return normalizeSuggestions(parsed);
-    }
-    if (parsed && typeof parsed === 'object') {
-      return normalizeSuggestions(parsed.suggestions || parsed.comments || parsed.variants || []);
-    }
-  } catch (error) {
-    return [];
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const parsed = JSON.parse(cleaned);
+    const arr = Array.isArray(parsed) ? parsed : (parsed && parsed.suggestions ? parsed.suggestions : []);
+    return arr
+      .map(function(s) { return String(s || '').replace(/^["']|["']$/g, '').trim(); })
+      .filter(Boolean);
+  } catch (e) {
+    return text.trim() ? [text.trim()] : [];
   }
-  return [];
 }
 
-function normalizeSuggestions(values) {
-  const suggestions = [];
-  if (!Array.isArray(values)) return suggestions;
-  for (const value of values) {
-    addUniqueSuggestion(suggestions, value);
-  }
-  return suggestions;
+function normalizeModelMode(value) {
+  if (value === 'flash' || value === 'pro') return value;
+  return DEFAULT_MODEL_MODE;
 }
 
-function addUniqueSuggestion(suggestions, value) {
-  const suggestion = String(value || '')
-    .replace(/^["']|["']$/g, '')
-    .trim();
-  if (suggestion && !suggestions.includes(suggestion)) {
-    suggestions.push(suggestion);
-  }
+function isRetryable(err) {
+  return isTransient(err) || (err && err.status === 404) || !!(err && err.retryNextModel);
+}
+
+function isTransient(err) {
+  const s = err && err.status;
+  return s === 500 || s === 502 || s === 503 || s === 504;
+}
+
+function getCooldown(apiKey, model) {
+  const key = apiKey + ':' + model;
+  const until = GEMINI_MODEL_COOLDOWNS.get(key) || 0;
+  const remaining = until - Date.now();
+  if (remaining <= 0) GEMINI_MODEL_COOLDOWNS.delete(key);
+  return Math.max(0, remaining);
+}
+
+function setCooldown(apiKey, model) {
+  GEMINI_MODEL_COOLDOWNS.set(apiKey + ':' + model, Date.now() + DEFAULT_RATE_LIMIT_COOLDOWN_MS);
+}
+
+function delay(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
