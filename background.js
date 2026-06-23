@@ -3,6 +3,7 @@
 const DEFAULT_MODEL_MODE = 'flash';
 const MODEL_CHAINS = {
   flash: [
+    'gemini-3.5-flash',
     'gemini-2.5-flash',
     'gemini-2.0-flash-exp',
     'gemini-1.5-flash'
@@ -120,7 +121,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
-function buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment, analysis) {
+function buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment) {
   const lines = [];
 
   lines.push('[POST-AUTHOR]');
@@ -145,15 +146,11 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
     lines.push('[/REFINEMENT]');
   }
 
-  // Inject post analysis when available — this is what makes comments contextually relevant
-  if (analysis && analysis.topic && analysis.angles && analysis.angles.length) {
-    lines.push('');
-    lines.push('[POST-ANALYSIS]');
-    lines.push('Core point: ' + analysis.topic);
-    lines.push('Specific angles to react to:');
-    analysis.angles.forEach(function(a, i) { lines.push((i + 1) + '. ' + a); });
-    lines.push('[/POST-ANALYSIS]');
-  }
+  lines.push('');
+  lines.push('Before writing any comment, do this silently:');
+  lines.push('1. In one sentence — what SPECIFICALLY is this post saying/claiming/announcing?');
+  lines.push('2. List 3 distinct things a real reader could react to (specific details, numbers, decisions, claims — not generic topics).');
+  lines.push('Use those 3 angles as the basis for your 3 comment variants.');
 
   if (personalStyle && personalStyle.trim()) {
     lines.push('');
@@ -175,12 +172,13 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
   }
 
   lines.push('');
-  lines.push('Generate exactly 4 LinkedIn comment variants.');
+  lines.push('Generate exactly 3 LinkedIn comment variants. Each must have a DIFFERENT structure — no two can share the same form or length category:');
+  lines.push('');
+  lines.push('VARIANT 1 — ULTRA SHORT: Hard cap of 12 words. One blunt observation, sharp take, or dry reaction. Strip everything non-essential.');
+  lines.push('VARIANT 2 — QUESTION: One genuine, specific question about a concrete detail in the post. Not rhetorical. Not "what do you think?". A real question you would actually want answered.');
+  lines.push('VARIANT 3 — PUSHBACK: Challenge a claim, flag what the post glossed over, or add context that complicates their point. If there is any foothold to disagree — take it.');
 
-  if (analysis && analysis.angles && analysis.angles.length) {
-    lines.push('Write one comment per angle from [POST-ANALYSIS]. Each comment must directly address that specific angle.');
-    lines.push('A comment that could apply to ANY post on this topic — without reading the actual post — is a failure. Reject and rewrite it.');
-  }
+
 
   lines.push('');
   lines.push('WHAT MAKES AI COMMENTS INSTANTLY OBVIOUS — never do any of this:');
@@ -202,14 +200,14 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
   lines.push('- They feel typed quickly, not composed carefully');
   lines.push('- They do not explain themselves or over-justify their reaction');
   lines.push('');
-  lines.push('MANDATORY SELF-CHECK: Before finalizing each comment, ask — "Could someone have written this without reading the post?" If yes: reject and rewrite. "Does this sound like an AI trying to be supportive?" If yes: reject and rewrite.');
+  lines.push('MANDATORY SELF-CHECK: Before finalising each comment, ask — "Could someone have written this without reading the post?" If yes: reject and rewrite. "Does this sound like an AI trying to be supportive?" If yes: reject and rewrite.');
   lines.push('');
   lines.push('Match the post language exactly (French post -> French reply, Spanish -> Spanish, etc.).');
   lines.push('Never start with the author\'s name.');
-  lines.push('Each of the 4 variants must take a clearly different angle, not just rephrase the same thought.');
+  lines.push('Each of the 3 variants must take a clearly different angle, not just rephrase the same thought.');
   lines.push('');
   lines.push('Return ONLY valid JSON, no markdown, no explanation:');
-  lines.push('{"suggestions":["comment1","comment2","comment3","comment4"]}');
+  lines.push('{"topic":"one-sentence summary of what the post specifically claims","angles":["angle1","angle2","angle3"],"suggestions":["comment1","comment2","comment3"]}');
 
   return lines.join('\n');
 }
@@ -255,96 +253,15 @@ async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle
   throw lastError;
 }
 
-// ─── Post analysis (Call 1 of 2) ─────────────────────────────────────────────
-// Extracts specific reaction angles from the post so comments aren't generic.
-// Failure here is non-fatal — we fall back to single-call mode.
-
-async function analyzePost(postText, postAuthor, apiKey, model) {
-  const lines = [];
-  lines.push('[POST-AUTHOR]');
-  lines.push(postAuthor || 'Unknown');
-  lines.push('[/POST-AUTHOR]');
-  lines.push('');
-  lines.push('[POST-CONTENT]');
-  lines.push(postText);
-  lines.push('[/POST-CONTENT]');
-  lines.push('');
-  lines.push('Read this LinkedIn post carefully. Extract what a real person would actually react to.');
-  lines.push('');
-  lines.push('1. Summarise in one sentence: what SPECIFICALLY is being said/announced/claimed? (not just the topic)');
-  lines.push('2. Identify 4 distinct reaction angles tied directly to specific details in this post.');
-  lines.push('');
-  lines.push('BAD angles (too vague, apply to any post):');
-  lines.push('- "You could congratulate them on their achievement"');
-  lines.push('- "Ask about their plans for the future"');
-  lines.push('- "Share your thoughts on the topic"');
-  lines.push('');
-  lines.push('GOOD angles (post-specific, tied to actual content):');
-  lines.push('- "Push back on the claim that X is the bottleneck — in practice Y causes more failures"');
-  lines.push('- "React to the specific number/metric they mentioned and what it implies"');
-  lines.push('- "Add a missing context that changes how you read their conclusion"');
-  lines.push('- "Express genuine curiosity about a specific decision or tradeoff they mentioned"');
-  lines.push('- "Agree with the core point but flag an edge case they didn\'t address"');
-  lines.push('- "Short dry reaction to the most surprising or counterintuitive thing in the post"');
-  lines.push('');
-  lines.push('Return ONLY valid JSON:');
-  lines.push('{"topic":"one specific sentence","angles":["angle1","angle2","angle3","angle4"]}');
-
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: lines.join('\n') }] }],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseJsonSchema: {
-          type: 'object',
-          properties: {
-            topic:  { type: 'string' },
-            angles: { type: 'array', items: { type: 'string' } }
-          },
-          required: ['topic', 'angles']
-        }
-      }
-    })
-  });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error((data && data.error && data.error.message) || 'HTTP ' + res.status);
-
-  const raw = (data.candidates &&
-    data.candidates[0] &&
-    data.candidates[0].content &&
-    data.candidates[0].content.parts &&
-    data.candidates[0].content.parts[0] &&
-    data.candidates[0].content.parts[0].text) || '';
-
-  const parsed = JSON.parse(raw.trim());
-  if (!parsed.topic || !Array.isArray(parsed.angles) || !parsed.angles.length) {
-    throw new Error('Malformed analysis response');
-  }
-  return parsed;
-}
-
-// ─── Main Gemini call (Call 2 of 2) ─────────────────────────────────────────
+// ─── Single unified Gemini call ─────────────────────────────────────────────
+// Replaced the old 2-call architecture (analyzePost → buildPrompt → generate)
+// with a single prompt that returns analysis + suggestions together.
+// This cuts latency roughly in half — one network round trip instead of two.
 
 async function callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment) {
-  console.log('[Butterfly] Step 1 — analyzing post with ' + model);
+  console.log('[Butterfly] Generating comments with ' + model + ' (single-call)');
 
-  // Call 1: Understand the post deeply
-  let analysis = null;
-  try {
-    analysis = await analyzePost(postText, postAuthor, apiKey, model);
-    console.log('[Butterfly] Post topic:', analysis.topic);
-    console.log('[Butterfly] Angles:', analysis.angles);
-  } catch (e) {
-    console.warn('[Butterfly] Post analysis failed (' + e.message + ') — falling back to single-call mode');
-  }
-
-  console.log('[Butterfly] Step 2 — generating styled comments with ' + model);
-
-  const prompt = buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment, analysis);
+  const prompt = buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment);
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
 
   const res = await fetch(url, {
@@ -353,10 +270,13 @@ async function callGemini(postText, postAuthor, apiKey, model, personalStyle, re
     body: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
+        temperature: 1.0,
         responseMimeType: 'application/json',
         responseJsonSchema: {
           type: 'object',
           properties: {
+            topic:       { type: 'string' },
+            angles:      { type: 'array', items: { type: 'string' } },
             suggestions: { type: 'array', items: { type: 'string' } }
           },
           required: ['suggestions']
@@ -385,7 +305,18 @@ async function callGemini(postText, postAuthor, apiKey, model, personalStyle, re
     data.candidates[0].content.parts[0] &&
     data.candidates[0].content.parts[0].text) || '';
 
-  const suggestions = parseSuggestions(text);
+  const parsed = (function() {
+    try { return JSON.parse(text.trim()); } catch(e) { return null; }
+  })();
+
+  const suggestions = parsed && Array.isArray(parsed.suggestions)
+    ? parsed.suggestions.map(function(s) { return String(s || '').trim(); }).filter(Boolean)
+    : parseSuggestions(text);
+
+  if (suggestions.length) {
+    if (parsed && parsed.topic) console.log('[Butterfly] Topic:', parsed.topic);
+    if (parsed && parsed.angles) console.log('[Butterfly] Angles:', parsed.angles);
+  }
 
   if (!suggestions.length) {
     const err = new Error('Empty suggestions from ' + model);

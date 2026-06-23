@@ -153,12 +153,8 @@ function updateStyleBadge(hasContent) {
   }
 }
 
-let styleTimeout;
-styleTextarea.addEventListener('input', function () {
-  clearTimeout(styleTimeout);
-  updateStyleBadge(this.value.trim().length > 0);
-  styleTimeout = setTimeout(() => chrome.storage.sync.set({ personalStyle: this.value }), 500);
-});
+// Style textarea is read-only — only the scraper sync can write personalStyle.
+// No input listener needed.
 
 // ─── Sync from LinkedIn ───────────────────────────────────────────────────────
 

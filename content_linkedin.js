@@ -82,7 +82,7 @@ function clearSuggestionError(box) {
 let linkedinEnabled = true;
 
 function removeLinkedInUI() {
-  document.querySelectorAll('.butterfly-ui-container, .butterfly-variants-container, .butterfly-inline-status').forEach(element => {
+  document.querySelectorAll('.butterfly-ui-container, .butterfly-variants-container, .butterfly-variants-dropdown, .butterfly-pills-wrapper, .butterfly-inline-status').forEach(element => {
     element.remove();
   });
   document.querySelectorAll('[data-butterfly-injected]').forEach(element => {
@@ -100,9 +100,8 @@ function refreshLinkedInEnabled() {
   }
   chrome.storage.sync.get(['enabledPlatforms'], (result) => {
     if (chrome.runtime.lastError) {
-      if (chrome.runtime.lastError.message && chrome.runtime.lastError.message.includes('context invalidated')) {
-        showContextInvalidatedMessage();
-      }
+      const msg = chrome.runtime.lastError && chrome.runtime.lastError.message;
+      if (msg && msg.includes('context invalidated')) showContextInvalidatedMessage();
       return;
     }
     const enabledPlatforms = result.enabledPlatforms || {
@@ -398,24 +397,62 @@ async function getGeminiSuggestion(postText, postAuthor, refinement = '', curren
       }
       
       chrome.runtime.sendMessage({ type: 'GEMINI_SUGGEST', site: 'linkedin', postText, postAuthor, refinement, currentComment }, (response) => {
-        // Check for chrome.runtime.lastError which indicates extension context issues
         if (chrome.runtime.lastError) {
-          console.error('[Butterfly] Extension context error:', chrome.runtime.lastError);
-          if (chrome.runtime.lastError.message && chrome.runtime.lastError.message.includes('context invalidated')) {
+          const errMsg = (chrome.runtime.lastError && chrome.runtime.lastError.message) || String(chrome.runtime.lastError);
+          console.warn('[Butterfly] sendMessage error:', errMsg);
+
+          if (errMsg.includes('context invalidated')) {
+            // Extension was reloaded/updated — page refresh required
             showContextInvalidatedMessage();
+            resolve({ error: 'Extension was updated. Please refresh the page.' });
+            return;
           }
-          resolve({ error: 'Extension was updated. Please refresh the page to continue using Butterfly.' });
+
+          if (errMsg.includes('Receiving end does not exist') || errMsg.includes('Could not establish connection')) {
+            // MV3 service worker went idle. Retry once after a short delay to wake it.
+            console.log('[Butterfly] Service worker may be sleeping — retrying in 600ms...');
+            setTimeout(() => {
+              try {
+                chrome.runtime.sendMessage({ type: 'GEMINI_SUGGEST', site: 'linkedin', postText, postAuthor, refinement, currentComment }, (retryResponse) => {
+                  const retryErr = chrome.runtime.lastError;
+                  if (retryErr) {
+                    console.error('[Butterfly] Retry also failed:', (retryErr && retryErr.message) || retryErr);
+                    resolve({ error: 'Could not reach Butterfly. Try clicking Suggest again.' });
+                    return;
+                  }
+                  if (retryResponse && retryResponse.error) {
+                    resolve({ error: retryResponse.error });
+                  } else if (retryResponse && retryResponse.disabled) {
+                    resolve({ disabled: true });
+                  } else if (retryResponse && retryResponse.suggestions) {
+                    if (retryResponse.debugPrompt) {
+                      console.log('[Butterfly LinkedIn] Debug prompt:\n', retryResponse.debugPrompt);
+                    }
+                    resolve({ suggestions: retryResponse.suggestions });
+                  } else {
+                    resolve({ error: 'No suggestion received' });
+                  }
+                });
+              } catch (retryEx) {
+                resolve({ error: 'Could not reach Butterfly. Try clicking Suggest again.' });
+              }
+            }, 600);
+            return;
+          }
+
+          // Unknown runtime error
+          resolve({ error: 'Connection error. Click Suggest to try again.' });
           return;
         }
+
         if (response && response.error) {
           console.error('[Butterfly] API error:', response.error);
           resolve({ error: response.error });
         } else if (response && response.disabled) {
           resolve({ disabled: true });
         } else if (response && response.suggestions) {
-          // Log debug prompt if available
           if (response.debugPrompt) {
-            console.log('[Butterfly LinkedIn] Debug - Full prompt sent to API:\n', response.debugPrompt);
+            console.log('[Butterfly LinkedIn] Debug prompt:\n', response.debugPrompt);
           }
           resolve({ suggestions: response.suggestions });
         } else {
@@ -445,12 +482,9 @@ function scanAndInject() {
     }
     
     chrome.storage.sync.get(['enabledPlatforms'], (result) => {
-      // Check for chrome.runtime.lastError which indicates context issues
       if (chrome.runtime.lastError) {
-        console.log('[Butterfly LinkedIn] Chrome runtime error:', chrome.runtime.lastError);
-        if (chrome.runtime.lastError.message && chrome.runtime.lastError.message.includes('context invalidated')) {
-          showContextInvalidatedMessage();
-        }
+        const msg = chrome.runtime.lastError && chrome.runtime.lastError.message;
+        if (msg && msg.includes('context invalidated')) showContextInvalidatedMessage();
         return;
       }
       
@@ -610,7 +644,7 @@ const butterflyLastFillTime = new WeakMap();
   function applyUiContainerPlacementStyles(uiContainer, placement) {
     uiContainer.dataset.butterflyPlacement = placement;
     uiContainer.classList.remove('butterfly-ui-container--linkedin-toolbar');
-    uiContainer.style.cssText = 'display: flex; align-items: center; margin-top: 5px; flex-wrap: wrap;';
+    uiContainer.style.cssText = 'display: flex; align-items: center; margin-top: 5px; flex-wrap: wrap; width: 100%;';
   }
 
   function findUiInsertionTarget(box, composer) {
@@ -904,15 +938,14 @@ const butterflyLastFillTime = new WeakMap();
       
       const originalSuggestText = suggestBtn.textContent;
       suggestBtn.disabled = true;
-      suggestBtn.textContent = 'Auto-suggesting...';
-      
-      // Hide refine button if it exists
-      const uiContainer = suggestBtn.parentElement;
-      uiContainer.querySelectorAll('.butterfly-refine-btn').forEach(btn => btn.style.display = 'none');
+      suggestBtn.textContent = '✨ Generating...';
       clearSuggestionError(box);
+      showPillsSkeleton(box);
       
       const { postText, postAuthor } = extractPostInfo(postElement, box);
       const result = await getGeminiSuggestion(postText, postAuthor);
+      
+      removePillsWrapper(box);
       
       if (result.error) {
         console.error('[Butterfly] Auto-suggestion error:', result.error);
@@ -921,140 +954,157 @@ const butterflyLastFillTime = new WeakMap();
         removeLinkedInUI();
         return;
       } else if (result.suggestions && result.suggestions.length > 0) {
-        // Use the first suggestion as the default
         setCommentBoxValue(box, result.suggestions[0], { avoidFocus: true });
         releaseComposerFocusAfterLinkedInUpdates(box);
         console.log('[Butterfly] Auto-suggestion applied.');
-        addVariantsDropdown(box, result.suggestions, 0);
+        addSuggestionPills(box, result.suggestions, 0);
       } else {
         console.log('[Butterfly] Auto-suggestion failed or returned empty.');
       }
       
       suggestBtn.disabled = false;
       suggestBtn.textContent = originalSuggestText;
-      uiContainer.querySelectorAll('.butterfly-refine-btn').forEach(btn => btn.style.display = '');
     }
   }
 
-  function addVariantsDropdown(box, suggestions, currentIndex = 0) {
-    // Remove existing dropdown if any
-    document.querySelectorAll('.butterfly-variants-container, .butterfly-variants-dropdown').forEach(element => element.remove());
-    
-    if (!suggestions || suggestions.length <= 1) return;
-    
-    // Create variants container
-    const variantsContainer = document.createElement('div');
-    variantsContainer.className = 'butterfly-variants-container';
-    variantsContainer.style.cssText = 'position: relative; display: inline-block;';
-    
-    // Create variants button
-    const variantsBtn = document.createElement('button');
-    variantsBtn.className = 'butterfly-variants-btn butterfly-btn';
-    variantsBtn.textContent = 'All variants ▼';
-    variantsBtn.style.cssText = 'background-color: #6B46C1; color: white; padding: 6px 12px; border: 1px solid #553C9A; border-radius: 5px; cursor: pointer; font-size: 0.85em; font-weight: 500; margin-left: 5px; margin-top: 5px;';
-    
-    // Create dropdown menu
-    const dropdown = document.createElement('div');
-    dropdown.className = 'butterfly-variants-dropdown';
-    dropdown.style.cssText = 'display: none; position: fixed; background: white; color: #24292e; border: 1px solid #d0d7de; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 350px; max-width: calc(100vw - 20px); z-index: 2147483647; max-height: 300px; overflow-y: auto;';
-    
-    // Add each variant to dropdown
-    suggestions.forEach((suggestion, index) => {
-      const option = document.createElement('div');
-      option.className = 'butterfly-variant-option';
-      option.style.cssText = 'padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #e1e4e8; font-size: 0.85em; line-height: 1.4;';
-      if (index === currentIndex) {
-        option.style.backgroundColor = '#f3f6fb';
-        option.style.fontWeight = '500';
+  // ── Pill style injection (once per page) ─────────────────────────────────
+  function injectPillStyles() {
+    if (document.getElementById('butterfly-pill-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'butterfly-pill-styles';
+    style.textContent = `
+      .butterfly-pills-row::-webkit-scrollbar { display: none; }
+      .butterfly-pill {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 5px 8px;
+        border-radius: 100px;
+        border: 1.5px solid #0a66c2;
+        background: #fff;
+        color: #0a66c2;
+        font-size: 12px;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+        opacity: 0;
+        transform: translateY(5px);
+        animation: butterfly-pill-in 0.22s ease forwards;
+        line-height: 1.45;
+        outline: none;
+        user-select: none;
+        text-align: left;
       }
-      
-      // Truncate long suggestions for preview
-      const displayText = suggestion.length > 100 ? suggestion.substring(0, 100) + '...' : suggestion;
-      option.textContent = `${index + 1}. ${displayText}`;
-      
-      // Add full comment as title attribute for hover tooltip
-      option.title = suggestion;
-      
-      option.onmouseover = () => {
-        if (index !== currentIndex) {
-          option.style.backgroundColor = '#f8f9fa';
-        }
-      };
-      
-      option.onmouseout = () => {
-        if (index !== currentIndex) {
-          option.style.backgroundColor = 'white';
-        }
-      };
-      
-      option.onclick = () => {
-        setCommentBoxValue(box, suggestion);
-        dropdown.style.display = 'none';
-        // Update current selection styling
-        dropdown.querySelectorAll('.butterfly-variant-option').forEach((opt, i) => {
-          opt.style.backgroundColor = i === index ? '#f3f6fb' : 'white';
-          opt.style.fontWeight = i === index ? '500' : 'normal';
-        });
-      };
-      
-      dropdown.appendChild(option);
-    });
-    
-    // Toggle dropdown on button click
-    variantsBtn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (dropdown.style.display === 'none') {
-        dropdown.style.display = 'block';
-
-        const btnRect = variantsBtn.getBoundingClientRect();
-        const dropdownRect = dropdown.getBoundingClientRect();
-        const viewportHeight = window.innerHeight;
-        const viewportWidth = window.innerWidth;
-        const gap = 8;
-
-        if (btnRect.top >= dropdownRect.height + gap) {
-          dropdown.style.top = 'auto';
-          dropdown.style.bottom = (viewportHeight - btnRect.top + gap) + 'px';
-        } else {
-          dropdown.style.top = Math.max(gap, Math.min(btnRect.bottom + gap, viewportHeight - dropdownRect.height - gap)) + 'px';
-          dropdown.style.bottom = 'auto';
-        }
-
-        let left = btnRect.left;
-        if (left + dropdownRect.width > viewportWidth - gap) {
-          left = viewportWidth - dropdownRect.width - gap;
-        }
-        dropdown.style.left = Math.max(gap, left) + 'px';
-      } else {
-        dropdown.style.display = 'none';
+      .butterfly-pill:hover:not(.butterfly-pill--active) { background: #eaf2fc; }
+      .butterfly-pill:active { opacity: 0.85; }
+      .butterfly-pill--active {
+        background: #0a66c2;
+        color: #fff;
+        border-color: #0a66c2;
+        animation: none;
+        opacity: 1;
+        transform: none;
       }
-    };
-    
-    // Close dropdown when clicking outside
-    document.addEventListener('click', (e) => {
-      if (!variantsContainer.contains(e.target) && !dropdown.contains(e.target)) {
-        dropdown.style.display = 'none';
+      .butterfly-pill--active:hover { background: #004182; border-color: #004182; }
+      .butterfly-pill-ghost {
+        flex-shrink: 0;
+        height: 27px;
+        border-radius: 100px;
+        background: linear-gradient(90deg, #e8e8e8 25%, #f2f2f2 50%, #e8e8e8 75%);
+        background-size: 200% 100%;
+        animation: butterfly-shimmer 1.4s ease-in-out infinite;
       }
-    });
-    
-    variantsContainer.appendChild(variantsBtn);
-    document.body.appendChild(dropdown);
-    
-    // Insert after the Refine button or after the comment box
+      @keyframes butterfly-pill-in {
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes butterfly-shimmer {
+        0%   { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // ── Pill helpers ──────────────────────────────────────────────────────────
+  function removePillsWrapper(box) {
+    // Clean up legacy body-level dropdown elements
+    document.querySelectorAll('.butterfly-variants-container, .butterfly-variants-dropdown').forEach(function(el) { el.remove(); });
+    if (!box) return;
     const uiScope = findUiContainerScope(box);
-    const uiContainer = uiScope.querySelector('.butterfly-ui-container');
-    const refineBtn = uiScope.querySelector('.butterfly-refine-btn');
-    if (refineBtn) {
-      refineBtn.parentElement.insertBefore(variantsContainer, refineBtn.nextSibling);
-    } else {
-      if (uiContainer) {
-        uiContainer.appendChild(variantsContainer);
-      }
+    const uiContainer = uiScope && uiScope.querySelector('.butterfly-ui-container');
+    if (uiContainer) {
+      uiContainer.querySelectorAll('.butterfly-pills-wrapper').forEach(function(el) { el.remove(); });
     }
   }
-  
+
+  function showPillsSkeleton(box) {
+    injectPillStyles();
+    removePillsWrapper(box);
+
+    const pillsWrapper = document.createElement('div');
+    pillsWrapper.className = 'butterfly-pills-wrapper';
+    pillsWrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;margin-top:6px;flex-basis:100%;';
+
+    const pillsRow = document.createElement('div');
+    pillsRow.style.cssText = 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:2px 2px 5px;width:100%;box-sizing:border-box;';
+
+    [85, 128, 96].forEach(function(w) {
+      const ghost = document.createElement('div');
+      ghost.className = 'butterfly-pill-ghost';
+      ghost.style.cssText = 'flex:1; min-width:0;';
+      pillsRow.appendChild(ghost);
+    });
+
+    pillsWrapper.appendChild(pillsRow);
+    const uiScope = findUiContainerScope(box);
+    const uiContainer = uiScope && uiScope.querySelector('.butterfly-ui-container');
+    if (uiContainer) uiContainer.appendChild(pillsWrapper);
+  }
+
+  function addSuggestionPills(box, suggestions, currentIndex) {
+    if (currentIndex === undefined) currentIndex = 0;
+    injectPillStyles();
+    removePillsWrapper(box);
+
+    if (!suggestions || suggestions.length === 0) return;
+
+    const pillsWrapper = document.createElement('div');
+    pillsWrapper.className = 'butterfly-pills-wrapper';
+    pillsWrapper.style.cssText = 'display:flex;flex-direction:column;width:100%;margin-top:6px;flex-basis:100%;';
+
+    const pillsRow = document.createElement('div');
+    pillsRow.className = 'butterfly-pills-row';
+    pillsRow.style.cssText = 'display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:2px 2px 6px;width:100%;box-sizing:border-box;';
+
+    suggestions.forEach(function(suggestion, index) {
+      const pill = document.createElement('button');
+      pill.className = 'butterfly-pill' + (index === currentIndex ? ' butterfly-pill--active' : '');
+      pill.style.animationDelay = (index * 55) + 'ms';
+      const displayText = suggestion.length > 20 ? suggestion.substring(0, 20) + '…' : suggestion;
+      pill.textContent = displayText;
+      pill.title = suggestion; // full text on hover
+
+      pill.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        setCommentBoxValue(box, suggestion);
+        pillsRow.querySelectorAll('.butterfly-pill').forEach(function(p, i) {
+          p.classList.toggle('butterfly-pill--active', i === index);
+        });
+      });
+
+      pillsRow.appendChild(pill);
+    });
+
+    pillsWrapper.appendChild(pillsRow);
+    const uiScope = findUiContainerScope(box);
+    const uiContainer = uiScope && uiScope.querySelector('.butterfly-ui-container');
+    if (uiContainer) uiContainer.appendChild(pillsWrapper);
+  }
+
 
   function injectUI(box, postElement) {
     if (!linkedinEnabled) return;
@@ -1087,11 +1137,11 @@ const butterflyLastFillTime = new WeakMap();
     uiContainer.className = 'butterfly-ui-container';
     uiContainer.dataset.commentboxId = box.dataset.butterflyId;
     
-    // Create suggest button
+    // Create suggest button — pill-shaped, Butterfly purple
     const suggestBtn = document.createElement('button');
-    suggestBtn.textContent = 'Suggest Comment ✨';
+    suggestBtn.textContent = '🦋 Suggest';
     suggestBtn.className = 'butterfly-suggest-btn butterfly-btn';
-    suggestBtn.style.cssText = 'background-color: SlateBlue; color: white; padding: 6px 12px; border: 1px solid #40528A; border-radius: 5px; margin-left: 5px; margin-top: 5px; cursor: pointer; font-size: 0.85em; font-weight: 500;';
+    suggestBtn.style.cssText = 'background:#6040c8;color:#fff;padding:5px 14px;border:none;border-radius:100px;margin-left:5px;margin-top:5px;cursor:pointer;font-size:0.82em;font-weight:600;letter-spacing:0.01em;transition:background 0.15s ease;outline:none;';
     uiContainer.appendChild(suggestBtn);
     
     // Keep Butterfly outside LinkedIn's native editor/toolbar flex row.
@@ -1113,10 +1163,12 @@ const butterflyLastFillTime = new WeakMap();
       
       const originalText = suggestBtn.textContent;
       suggestBtn.disabled = true;
-      suggestBtn.textContent = 'Thinking...';
-      const { postText, postAuthor } = extractPostInfo(postElement, box);
+      suggestBtn.textContent = '✨ Generating...';
       clearSuggestionError(box);
+      showPillsSkeleton(box);
+      const { postText, postAuthor } = extractPostInfo(postElement, box);
       const result = await getGeminiSuggestion(postText, postAuthor);
+      removePillsWrapper(box);
       if (result.error) {
         showSuggestionError(box, result.error);
       } else if (result.disabled) {
@@ -1124,7 +1176,7 @@ const butterflyLastFillTime = new WeakMap();
         return;
       } else if (result.suggestions && result.suggestions.length > 0) {
         setCommentBoxValue(box, result.suggestions[0]);
-        addVariantsDropdown(box, result.suggestions, 0);
+        addSuggestionPills(box, result.suggestions, 0);
       }
       suggestBtn.disabled = false;
       suggestBtn.textContent = originalText;
