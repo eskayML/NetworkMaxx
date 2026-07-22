@@ -5,7 +5,7 @@ function isExtensionContextValid() {
   try {
     return chrome.runtime && chrome.runtime.id;
   } catch (e) {
-    console.log('[Butterfly LinkedIn] Extension context invalidated - page reload required');
+    console.log('[NetworkMaxx LinkedIn] Extension context invalidated - page reload required');
     return false;
   }
 }
@@ -30,7 +30,7 @@ function showContextInvalidatedMessage() {
     font-size: 14px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   `;
-  message.textContent = '🦋 Butterfly extension updated. Please refresh the page to continue.';
+  message.textContent = 'NetworkMaxx extension updated. Please refresh the page to continue.';
   document.body.appendChild(message);
   
   setTimeout(() => message.remove(), 10000);
@@ -936,9 +936,9 @@ const butterflyLastFillTime = new WeakMap();
       console.log('[Butterfly] Comment box is empty, attempting auto-suggestion.');
       box.dataset.butterflyAutoSuggested = 'true';
       
-      const originalSuggestText = suggestBtn.textContent;
+      const originalSuggestText = suggestBtn.innerHTML;
       suggestBtn.disabled = true;
-      suggestBtn.textContent = '✨ Generating...';
+      suggestBtn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span>';
       clearSuggestionError(box);
       showPillsSkeleton(box);
       
@@ -963,7 +963,7 @@ const butterflyLastFillTime = new WeakMap();
       }
       
       suggestBtn.disabled = false;
-      suggestBtn.textContent = originalSuggestText;
+      suggestBtn.innerHTML = originalSuggestText;
     }
   }
 
@@ -1016,6 +1016,27 @@ const butterflyLastFillTime = new WeakMap();
         background: linear-gradient(90deg, #e8e8e8 25%, #f2f2f2 50%, #e8e8e8 75%);
         background-size: 200% 100%;
         animation: butterfly-shimmer 1.4s ease-in-out infinite;
+      }
+      .butterfly-dots-loader {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        vertical-align: middle;
+      }
+      .butterfly-dots-loader span {
+        width: 4px;
+        height: 4px;
+        background-color: currentColor;
+        border-radius: 50%;
+        display: inline-block;
+        animation: butterfly-dot-pulse 1.2s infinite ease-in-out both;
+      }
+      .butterfly-dots-loader span:nth-child(1) { animation-delay: -0.32s; }
+      .butterfly-dots-loader span:nth-child(2) { animation-delay: -0.16s; }
+      .butterfly-dots-loader span:nth-child(3) { animation-delay: 0s; }
+      @keyframes butterfly-dot-pulse {
+        0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+        40% { transform: scale(1.1); opacity: 1; }
       }
       @keyframes butterfly-pill-in {
         to { opacity: 1; transform: translateY(0); }
@@ -1137,11 +1158,11 @@ const butterflyLastFillTime = new WeakMap();
     uiContainer.className = 'butterfly-ui-container';
     uiContainer.dataset.commentboxId = box.dataset.butterflyId;
     
-    // Create suggest button — pill-shaped, Butterfly purple
+    // Create suggest button — pill-shaped, LinkedIn blue
     const suggestBtn = document.createElement('button');
-    suggestBtn.textContent = '🦋 Suggest';
+    suggestBtn.innerHTML = '🦋 Suggest';
     suggestBtn.className = 'butterfly-suggest-btn butterfly-btn';
-    suggestBtn.style.cssText = 'background:#6040c8;color:#fff;padding:5px 14px;border:none;border-radius:100px;margin-left:5px;margin-top:5px;cursor:pointer;font-size:0.82em;font-weight:600;letter-spacing:0.01em;transition:background 0.15s ease;outline:none;';
+    suggestBtn.style.cssText = 'background:#0a66c2;color:#fff;padding:5px 14px;border:none;border-radius:100px;margin-left:5px;margin-top:5px;cursor:pointer;font-size:0.82em;font-weight:600;letter-spacing:0.01em;transition:background 0.15s ease;outline:none;';
     uiContainer.appendChild(suggestBtn);
     
     // Keep Butterfly outside LinkedIn's native editor/toolbar flex row.
@@ -1161,9 +1182,9 @@ const butterflyLastFillTime = new WeakMap();
         return;
       }
       
-      const originalText = suggestBtn.textContent;
+      const originalText = suggestBtn.innerHTML;
       suggestBtn.disabled = true;
-      suggestBtn.textContent = '✨ Generating...';
+      suggestBtn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span>';
       clearSuggestionError(box);
       showPillsSkeleton(box);
       const { postText, postAuthor } = extractPostInfo(postElement, box);
@@ -1179,7 +1200,7 @@ const butterflyLastFillTime = new WeakMap();
         addSuggestionPills(box, result.suggestions, 0);
       }
       suggestBtn.disabled = false;
-      suggestBtn.textContent = originalText;
+      suggestBtn.innerHTML = originalText;
     };
     
     // Attempt initial auto-suggestion
@@ -1225,6 +1246,142 @@ const butterflyLastFillTime = new WeakMap();
         }
       }
     }
+    
+    // Manage Master Generate button visibility
+    if (linkedinEnabled) {
+      injectMasterButton();
+    } else {
+      const masterBtn = document.getElementById('butterfly-master-generate-btn');
+      if (masterBtn) masterBtn.remove();
+    }
+  }
+
+  function isElementInViewport(el) {
+    const rect = el.getBoundingClientRect();
+    const windowHeight = (window.innerHeight || document.documentElement.clientHeight);
+    return (rect.top < windowHeight && rect.bottom > 0);
+  }
+
+  function findCommentButton(postElement) {
+    const directBtn = postElement.querySelector('.comment-button, .social-action-bar__button, button.social-actions-button');
+    if (directBtn) return directBtn;
+    
+    const buttons = postElement.querySelectorAll('button');
+    for (const btn of buttons) {
+      const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+      const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+      if (text.includes('comment') || ariaLabel.includes('comment')) {
+        return btn;
+      }
+    }
+    
+    const clickables = postElement.querySelectorAll('[role="button"], span, a');
+    for (const el of clickables) {
+      const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+      if (text === 'comment') {
+        return el;
+      }
+    }
+    return null;
+  }
+
+  async function triggerSuggestForPost(postElement) {
+    let commentBox = null;
+    for (const sel of COMMENT_SELECTORS) {
+      commentBox = postElement.querySelector(sel);
+      if (commentBox) break;
+    }
+
+    if (!commentBox) {
+      const commentBtn = findCommentButton(postElement);
+      if (commentBtn) {
+        commentBtn.click();
+      } else {
+        return;
+      }
+    }
+
+    // Wait up to 2 seconds for the Suggest button to be injected under this post
+    let suggestBtn = null;
+    for (let i = 0; i < 20; i++) {
+      suggestBtn = postElement.querySelector('.butterfly-suggest-btn');
+      if (suggestBtn && !suggestBtn.disabled && suggestBtn.textContent.includes('Suggest')) {
+        break;
+      }
+      await new Promise(r => setTimeout(r, 100));
+    }
+
+    if (suggestBtn) {
+      suggestBtn.click();
+    }
+  }
+
+  async function runMasterGenerate() {
+    const posts = Array.from(document.querySelectorAll('.feed-shared-update-v2, .update-components-update, .occludable-update, [data-urn^="urn:li:activity"], [data-id^="urn:li:activity"]'));
+    const visiblePosts = posts.filter(isElementInViewport);
+    
+    // Stagger the triggers by 600ms to prevent hitting concurrent rate limits on the API key
+    for (let i = 0; i < visiblePosts.length; i++) {
+      triggerSuggestForPost(visiblePosts[i]);
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+
+  function injectMasterButton() {
+    if (document.getElementById('butterfly-master-generate-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'butterfly-master-generate-btn';
+    btn.innerHTML = '🦋 <span>Master Generate</span>';
+    btn.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 99999;
+      background: linear-gradient(135deg, #0a66c2, #004182);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 12px 24px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 4px 20px rgba(10, 102, 194, 0.4);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    `;
+    
+    btn.onmouseover = () => {
+      btn.style.transform = 'translateY(-2px) scale(1.02)';
+      btn.style.boxShadow = '0 6px 24px rgba(10, 102, 194, 0.5)';
+    };
+    btn.onmouseout = () => {
+      btn.style.transform = 'none';
+      btn.style.boxShadow = '0 4px 20px rgba(10, 102, 194, 0.4)';
+    };
+    
+    btn.onclick = async (e) => {
+      e.preventDefault();
+      const originalContent = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> <span>Generating...</span>';
+      btn.style.background = '#004182';
+      
+      try {
+        await runMasterGenerate();
+      } catch (err) {
+        console.error('[Butterfly] Master Generate failed:', err);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+        btn.style.background = 'linear-gradient(135deg, #0a66c2, #004182)';
+      }
+    };
+
+    document.body.appendChild(btn);
   }
 
   // Observe DOM changes for new comment boxes

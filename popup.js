@@ -1,4 +1,4 @@
-// popup.js — Butterfly settings controller
+// popup.js — NetworkMaxx settings controller
 
 const MODEL_CHAINS = {
   flash: ['gemini-2.5-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-flash'],

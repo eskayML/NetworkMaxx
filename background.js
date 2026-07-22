@@ -3,9 +3,7 @@
 const DEFAULT_MODEL_MODE = 'flash';
 const MODEL_CHAINS = {
   flash: [
-    'gemini-3.5-flash',
     'gemini-2.5-flash',
-    'gemini-2.0-flash-exp',
     'gemini-1.5-flash'
   ],
   pro: [
@@ -13,14 +11,13 @@ const MODEL_CHAINS = {
     'gemini-1.5-pro'
   ]
 };
-const MAX_TRANSIENT_RETRIES = 2;
-const TRANSIENT_RETRY_DELAYS_MS = [700, 1600];
+const MAX_TRANSIENT_RETRIES = 1;
+const TRANSIENT_RETRY_DELAYS_MS = [400];
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 const GEMINI_MODEL_COOLDOWNS = new Map();
 
 // ─── Default style samples ────────────────────────────────────────────────────
-// These are real, cleaned human comments used as the style fallback when a user
-// hasn't synced their own writing style yet. Names and identifiers have been stripped.
+// Loaded directly from user_writing_style.md to ensure exact voice alignment
 
 const DEFAULT_STYLE_SAMPLES = [
   "nah I'd win",
@@ -93,7 +90,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (!apiKey) {
-      sendResponse({ error: '🦋 Open Butterfly settings and paste your Gemini API key to get started.' });
+      sendResponse({ error: 'Open NetworkMaxx settings and paste your Gemini API key to get started.' });
       return;
     }
 
@@ -108,7 +105,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch(e => {
         let msg = 'Failed to generate comment. Try again.';
         if (e?.message?.includes('403') || e?.message?.includes('API_KEY_INVALID')) {
-          msg = 'Invalid API key. Check your Butterfly settings.';
+          msg = 'Invalid API key. Check your NetworkMaxx settings.';
         } else if (e?.status === 429) {
           msg = 'Rate limit hit. Wait a moment and try again.';
         }
@@ -158,17 +155,14 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
     lines.push(personalStyle.trim());
     lines.push('[/MY-PAST-COMMENTS]');
     lines.push('');
-    lines.push('Those are real comments I wrote. That is your ONLY style reference.');
-    lines.push('Before writing anything, extract from those examples:');
-    lines.push('- How long my sentences are (short? never long?)');
-    lines.push('- Whether I use punctuation casually or formally (ellipses? exclamation marks? no caps?)');
-    lines.push('- My energy level (hype? dry? thoughtful? sarcastic? blunt?)');
-    lines.push('- Whether I ask questions or just state things');
-    lines.push('- Words and phrases I actually use vs ones I never use');
-    lines.push('You must reproduce that voice exactly. Not approximately. Exactly.');
+    lines.push('Those are real comments I wrote. Match this EXACT voice:');
+    lines.push('- Keep sentences short, direct, and conversational. Sometimes start with lowercase.');
+    lines.push('- Avoid formal, corporate, or overly polite tone.');
+    lines.push('- Casual punctuation, realistic tech/dev slang or subtle dry humor when appropriate.');
+    lines.push('- Match the concise, punchy style of the examples above.');
   } else {
     lines.push('');
-    lines.push('No style examples provided. Default: casual, short, direct. Write like someone who typed this in 10 seconds.');
+    lines.push('No style examples provided. Default: casual, short, direct. Write like a real dev replying in 5 seconds.');
   }
 
   lines.push('');
@@ -224,7 +218,7 @@ async function fetchSuggestions(postText, postAuthor, apiKey, modelMode, persona
     } catch (err) {
       lastError = err;
       if (!isRetryable(err) || model === models[models.length - 1]) throw err;
-      console.warn('[Butterfly] ' + model + ' failed, trying next model...');
+      console.warn('[NetworkMaxx] ' + model + ' failed, trying next model...');
     }
   }
   throw lastError || new Error('All models exhausted');
@@ -246,7 +240,7 @@ async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle
     } catch (err) {
       lastError = err;
       if (!isTransient(err) || attempt === MAX_TRANSIENT_RETRIES) throw err;
-      console.warn('[Butterfly] Transient error on attempt ' + (attempt + 1) + ', retrying in ' + TRANSIENT_RETRY_DELAYS_MS[attempt] + 'ms');
+      console.warn('[NetworkMaxx] Transient error on attempt ' + (attempt + 1) + ', retrying in ' + TRANSIENT_RETRY_DELAYS_MS[attempt] + 'ms');
       await delay(TRANSIENT_RETRY_DELAYS_MS[attempt]);
     }
   }
@@ -259,7 +253,7 @@ async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle
 // This cuts latency roughly in half — one network round trip instead of two.
 
 async function callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment) {
-  console.log('[Butterfly] Generating comments with ' + model + ' (single-call)');
+  console.log('[NetworkMaxx] Generating comments with ' + model + ' (single-call)');
 
   const prompt = buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment);
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
@@ -275,9 +269,9 @@ async function callGemini(postText, postAuthor, apiKey, model, personalStyle, re
         responseJsonSchema: {
           type: 'object',
           properties: {
+            suggestions: { type: 'array', items: { type: 'string' } },
             topic:       { type: 'string' },
-            angles:      { type: 'array', items: { type: 'string' } },
-            suggestions: { type: 'array', items: { type: 'string' } }
+            angles:      { type: 'array', items: { type: 'string' } }
           },
           required: ['suggestions']
         }
@@ -305,17 +299,17 @@ async function callGemini(postText, postAuthor, apiKey, model, personalStyle, re
     data.candidates[0].content.parts[0] &&
     data.candidates[0].content.parts[0].text) || '';
 
-  const parsed = (function() {
-    try { return JSON.parse(text.trim()); } catch(e) { return null; }
-  })();
+  const parsed = robustParseJson(text);
 
-  const suggestions = parsed && Array.isArray(parsed.suggestions)
-    ? parsed.suggestions.map(function(s) { return String(s || '').trim(); }).filter(Boolean)
+  const rawSuggestions = parsed && Array.isArray(parsed.suggestions)
+    ? parsed.suggestions
     : parseSuggestions(text);
 
+  const suggestions = flattenSuggestions(rawSuggestions);
+
   if (suggestions.length) {
-    if (parsed && parsed.topic) console.log('[Butterfly] Topic:', parsed.topic);
-    if (parsed && parsed.angles) console.log('[Butterfly] Angles:', parsed.angles);
+    if (parsed && parsed.topic) console.log('[NetworkMaxx] Topic:', parsed.topic);
+    if (parsed && parsed.angles) console.log('[NetworkMaxx] Angles:', parsed.angles);
   }
 
   if (!suggestions.length) {
@@ -324,23 +318,102 @@ async function callGemini(postText, postAuthor, apiKey, model, personalStyle, re
     throw err;
   }
 
-  console.log('[Butterfly] Got ' + suggestions.length + ' suggestions from ' + model);
+  console.log('[NetworkMaxx] Got ' + suggestions.length + ' suggestions from ' + model);
   return { suggestions: suggestions, debugPrompt: prompt };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function parseSuggestions(text) {
+function robustParseJson(text) {
+  if (!text) return null;
+  const trimmed = text.trim();
   try {
-    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
-    const arr = Array.isArray(parsed) ? parsed : (parsed && parsed.suggestions ? parsed.suggestions : []);
-    return arr
-      .map(function(s) { return String(s || '').replace(/^["']|["']$/g, '').trim(); })
-      .filter(Boolean);
+    return JSON.parse(trimmed);
   } catch (e) {
-    return text.trim() ? [text.trim()] : [];
+    // Try to extract JSON from code blocks
+    const codeBlockMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch) {
+      try { return JSON.parse(codeBlockMatch[1].trim()); } catch (err) {}
+    }
+    // Try to slice from first '{' or '[' to last '}' or ']'
+    const startJson = trimmed.indexOf('{');
+    const startArray = trimmed.indexOf('[');
+    let startIdx = -1;
+    let endIdx = -1;
+    if (startJson !== -1 && (startArray === -1 || startJson < startArray)) {
+      startIdx = startJson;
+      endIdx = trimmed.lastIndexOf('}');
+    } else if (startArray !== -1) {
+      startIdx = startArray;
+      endIdx = trimmed.lastIndexOf(']');
+    }
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      try { return JSON.parse(trimmed.slice(startIdx, endIdx + 1).trim()); } catch (err) {}
+    }
   }
+  return null;
+}
+
+function flattenSuggestions(arr) {
+  let results = [];
+  if (!Array.isArray(arr)) return results;
+  
+  for (let i = 0; i < arr.length; i++) {
+    let s = String(arr[i] || '').trim();
+    if (!s) continue;
+    
+    // Check if the string itself contains a nested JSON structure
+    let cleanText = s;
+    if (cleanText.toLowerCase().startsWith('suggestions:')) {
+      cleanText = cleanText.replace(/^suggestions:\s*/i, '').trim();
+    }
+    
+    if (cleanText.startsWith('{') || cleanText.startsWith('[') || cleanText.includes('"suggestions"') || cleanText.includes('variant1')) {
+      const parsed = robustParseJson(cleanText);
+      if (parsed) {
+        if (Array.isArray(parsed)) {
+          results = results.concat(flattenSuggestions(parsed));
+        } else if (parsed.suggestions) {
+          if (Array.isArray(parsed.suggestions)) {
+            results = results.concat(flattenSuggestions(parsed.suggestions));
+          } else if (typeof parsed.suggestions === 'object') {
+            results = results.concat(flattenSuggestions(Object.values(parsed.suggestions)));
+          }
+        } else {
+          results = results.concat(flattenSuggestions(Object.values(parsed)));
+        }
+        continue;
+      }
+    }
+    
+    // Regular string cleanup
+    s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    s = s.replace(/^["']|["']$/g, '').trim();
+    if (s) {
+      results.push(s);
+    }
+  }
+  return results;
+}
+
+function parseSuggestions(text) {
+  const parsed = robustParseJson(text);
+  if (parsed) {
+    return Array.isArray(parsed) ? parsed : (parsed.suggestions ? parsed.suggestions : []);
+  }
+  
+  const cleaned = text.trim();
+  if (cleaned.startsWith('{') || cleaned.startsWith('[') || cleaned.includes('"suggestions"')) {
+    return [];
+  }
+
+  let fallback = cleaned;
+  fallback = fallback.replace(/^(here is the json requested|here are the suggestions|json requested):/i, '').trim();
+  fallback = fallback.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  if (fallback.startsWith('{') || fallback.startsWith('[') || fallback.includes('"suggestions"')) {
+    return [];
+  }
+  return fallback ? [fallback] : [];
 }
 
 function normalizeModelMode(value) {

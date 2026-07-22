@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Butterfly",
+  "name": "NetworkMaxx",
   "version": "2.0",
-  "description": "AI comment suggestions in your personal writing style, powered by Google Gemini.",
+  "description": "Maximize your networking on LinkedIn with AI comment suggestions in your personal writing style.",
   "permissions": [
     "storage",
     "tabs"
@@ -41,7 +41,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Butterfly"
+    "default_title": "NetworkMaxx"
   },
   "icons": {
     "128": "icon128.png"

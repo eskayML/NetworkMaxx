@@ -1,4 +1,4 @@
-// content_scraper.js — Butterfly Writing Style Sync
+// content_scraper.js — NetworkMaxx Writing Style Sync
 // Runs on: linkedin.com/in/*/recent-activity/comments/
 
 (function () {
@@ -22,11 +22,11 @@
       bottom: 28px;
       right: 28px;
       z-index: 2147483647;
-      background: linear-gradient(145deg, #4a2d8a 0%, #6f42c1 100%);
+      background: linear-gradient(145deg, #0a66c2 0%, #004182 100%);
       color: white;
-      border-radius: 18px;
+      border-radius: 16px;
       padding: 18px 20px 16px;
-      box-shadow: 0 12px 40px rgba(92, 61, 158, 0.45), 0 2px 8px rgba(0,0,0,0.2);
+      box-shadow: 0 12px 40px rgba(10, 102, 194, 0.35), 0 2px 8px rgba(0,0,0,0.2);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 13px;
       width: 300px;
@@ -35,9 +35,9 @@
     ">
       <!-- Header -->
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-        <span style="font-size:22px; line-height:1;">🦋</span>
+        <span style="font-size:22px; line-height:1;">🚀</span>
         <div style="flex:1;">
-          <div style="font-weight:700; font-size:14px; letter-spacing:-0.2px;">Butterfly Style Sync</div>
+          <div style="font-weight:700; font-size:14px; letter-spacing:-0.2px;">NetworkMaxx Style Sync</div>
           <div style="opacity:0.75; font-size:11px; margin-top:1px;">Scrapes <strong style="opacity:1;">your</strong> comments only</div>
         </div>
         <button id="bf-close" style="
@@ -77,7 +77,7 @@
       <div id="bf-progress-wrap" style="display:none; margin-bottom:13px;">
         <div style="background:rgba(255,255,255,0.2); border-radius:4px; height:5px; overflow:hidden;">
           <div id="bf-progress-fill" style="
-            background: linear-gradient(90deg, #a78bfa, #ffffff);
+            background: linear-gradient(90deg, #70b5f9, #ffffff);
             height:100%;
             width:0%;
             border-radius:4px;
@@ -92,7 +92,7 @@
         <button id="bf-scrape-btn" style="
           flex: 1;
           background: white;
-          color: #6f42c1;
+          color: #0a66c2;
           border: none;
           border-radius: 10px;
           padding: 9px 14px;
@@ -107,7 +107,7 @@
       <!-- Footer note -->
       <div style="font-size:10.5px; opacity:0.6; margin-top:10px; text-align:center; line-height:1.4;">
         Only scrapes comments written by <strong style="opacity:1;">you</strong> on this page.
-        <br>Results save directly to Butterfly.
+        <br>Results save directly to NetworkMaxx.
       </div>
     </div>
   `;
@@ -272,7 +272,7 @@
 
       setProgress(results.length, target);
       progressFill.style.background = 'linear-gradient(90deg, #4ade80, #86efac)';
-      setStatus('✅', results.length + ' comments saved to Butterfly! You can close this tab.');
+      setStatus('✅', results.length + ' comments saved to NetworkMaxx! You can close this tab.');
       scrapeBtn.textContent = '✅ Done!';
       scrapeBtn.style.background = '#4ade80';
       scrapeBtn.style.color = '#14532d';

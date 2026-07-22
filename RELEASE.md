@@ -47,13 +47,17 @@ In Chrome:
 1. Open `chrome://extensions`.
 2. Enable Developer mode.
 3. Drag the ZIP into the page, or unzip it and use `Load unpacked`.
-4. Open the Butterfly popup and verify settings load.
-5. Run a no-post smoke test on the changed platform.
+4. Open the NetworkMaxx popup and verify settings load.
+5. Go to LinkedIn feed and confirm suggestion buttons appear cleanly under comment boxes.
+
+## Unpacked Installation Test
+1. Go to `chrome://extensions`.
+2. Load unpacked -> Select NetworkMaxx folder.
 
 ## 5. Upload to Chrome Web Store
 
 1. Open the Chrome Web Store Developer Dashboard.
-2. Select Butterfly.
+2. Select NetworkMaxx.
 3. Upload the generated ZIP.
 4. Fill release notes with the main user-visible changes.
 5. Submit for review.

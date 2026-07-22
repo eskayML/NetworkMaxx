@@ -1,20 +1,20 @@
-# Butterfly Chrome Extension
+# NetworkMaxx Chrome Extension
 
-AI-powered comment suggestions for LinkedIn, Twitter/X, and Product Hunt using Google Gemini. Become a social butterfly.
-
-Install from Chrome Web Store: https://chromewebstore.google.com/detail/butterfly/glnbimhldddbgjpoeohaogmhfmkfjbop
+Generate authentic, non-generic comments in your own writing style using Google Gemini.
 
 ## Features
-- Detects LinkedIn and Product Hunt posts and injects an AI comment suggestion UI.
-- Uses Gemini API to generate relevant, professional comment suggestions.
-- User can edit or post the suggestion.
-- API key is stored securely in extension settings.
+- Injects native comment suggestion buttons directly into LinkedIn post comment boxes
+- Learns from your real past comments so generated suggestions match your authentic tone
+- Multi-variant generation (ultra-short, genuine question, pushback/discussion)
+- One-click insertion into LinkedIn text editors
 
-## Setup
-1. Clone/download this repo (https://github.com/sundai-club/butterfly/archive/refs/heads/main.zip).
-2. Go to Chrome Extensions (`chrome://extensions`), enable Developer mode, and load this folder as an unpacked extension.
-3. Get a Google Gemini API key (https://aistudio.google.com/app/apikey).
-4. Click the Butterfly icon in Chrome toolbar, and enter your Gemini API key.
+## Setup Instructions
+
+1. Clone or download this repository.
+2. Open Chrome and navigate to `chrome://extensions/`.
+3. Enable **Developer mode** in the top-right corner.
+4. Click **Load unpacked** and select this directory.
+5. Click the NetworkMaxx icon in Chrome toolbar, and enter your Gemini API key.
 
 ## Notes
 - This extension is not affiliated with LinkedIn or Google.
