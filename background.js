@@ -73,18 +73,17 @@ const DEFAULT_STYLE_SAMPLES = [
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type !== 'GEMINI_SUGGEST') return;
 
-  const { postText, postAuthor, refinement, currentComment } = message;
+  const { postText, postAuthor, refinement, currentComment, platform = 'linkedin' } = message;
 
   chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enabledPlatforms'], (result) => {
     const apiKey = result.geminiApiKey;
     const modelMode = normalizeModelMode(result.geminiModel);
-    // Fall back to bundled default samples when user hasn't synced their own style yet
     const personalStyle = (result.personalStyle && result.personalStyle.trim())
       ? result.personalStyle.trim()
       : DEFAULT_STYLE_SAMPLES.join('\n');
-    const enabledPlatforms = result.enabledPlatforms || { linkedin: true };
+    const enabledPlatforms = result.enabledPlatforms || { linkedin: true, twitter: true };
 
-    if (!enabledPlatforms.linkedin) {
+    if (enabledPlatforms[platform] === false) {
       sendResponse({ disabled: true });
       return;
     }

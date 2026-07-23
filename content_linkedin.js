@@ -1247,12 +1247,23 @@ const butterflyLastFillTime = new WeakMap();
       }
     }
     
-    // Manage Master Generate button visibility
+    // Manage Master Generate vs Easy Connect button visibility based on URL
     if (linkedinEnabled) {
-      injectMasterButton();
+      const isProfilePage = window.location.pathname.includes('/in/');
+      if (isProfilePage) {
+        const masterBtn = document.getElementById('butterfly-master-generate-btn');
+        if (masterBtn) masterBtn.remove();
+        injectEasyConnectButton();
+      } else {
+        const easyBtn = document.getElementById('butterfly-easy-connect-btn');
+        if (easyBtn) easyBtn.remove();
+        injectMasterButton();
+      }
     } else {
       const masterBtn = document.getElementById('butterfly-master-generate-btn');
       if (masterBtn) masterBtn.remove();
+      const easyBtn = document.getElementById('butterfly-easy-connect-btn');
+      if (easyBtn) easyBtn.remove();
     }
   }
 
@@ -1325,6 +1336,187 @@ const butterflyLastFillTime = new WeakMap();
       triggerSuggestForPost(visiblePosts[i]);
       await new Promise(r => setTimeout(r, 600));
     }
+  }
+
+  function simulateFullClick(el) {
+    if (!el) return;
+    const opts = { bubbles: true, cancelable: true, view: window };
+    el.dispatchEvent(new PointerEvent('pointerdown', opts));
+    el.dispatchEvent(new MouseEvent('mousedown', opts));
+    if (typeof el.focus === 'function') el.focus();
+    el.dispatchEvent(new PointerEvent('pointerup', opts));
+    el.dispatchEvent(new MouseEvent('mouseup', opts));
+    el.dispatchEvent(new MouseEvent('click', opts));
+  }
+
+  function findElementByTextRegex(regexPattern, targetTag) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (regexPattern.test(node.nodeValue)) {
+        let parent = node.parentElement;
+        while (parent && parent !== document.body) {
+          const tag = parent.tagName.toLowerCase();
+          const cls = parent.className || '';
+          if (tag === targetTag || tag === 'button' || tag === 'a' || cls.indexOf('artdeco-button') !== -1) {
+            if (parent.offsetWidth > 0 || parent.offsetHeight > 0) {
+              return parent;
+            }
+          }
+          parent = parent.parentElement;
+        }
+      }
+    }
+    return null;
+  }
+
+  async function waitForRegexElement(regexPattern, targetTag, timeoutMs = 8000) {
+    const startTime = Date.now();
+    while (Date.now() - startTime < timeoutMs) {
+      const el = findElementByTextRegex(regexPattern, targetTag);
+      if (el) return el;
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return null;
+  }
+
+  async function runEasyConnect() {
+    // 1. Extract First Name (from h1 or h2)
+    const nameEl = document.querySelector('h1, h2');
+    const fullName = nameEl ? nameEl.innerText.trim() : '';
+    const firstName = fullName.split(' ')[0] || 'there';
+
+    // 2. Extract Company Name
+    let company = 'your company';
+    const headlineP = Array.from(document.querySelectorAll('p')).find(p => p.innerText.includes(' at '));
+    if (headlineP) {
+      const parts = headlineP.innerText.split(/ at /i);
+      if (parts.length > 1) {
+        company = parts[1].trim().replace(/^the /i, '');
+      }
+    } else {
+      const companySpan = document.querySelector('a[href*="company"] span, p span');
+      if (companySpan) company = companySpan.innerText.trim();
+    }
+
+    const noteParts = [
+      "Hi ", firstName, ". ",
+      "Quick question: as someone building at ", company, ", ",
+      "what qualities make an AI candidate genuinely stand out to you? ",
+      "I'm exploring my next opportunity and would value your perspective. ",
+      "Thought we'd connect."
+    ];
+    const personalizedNote = noteParts.join("");
+
+    // Step A: Find & click Connect Button / Link
+    let connectBtn = findElementByTextRegex(/^Connect$/i, 'a') || 
+                     findElementByTextRegex(/Connect/i, 'button') ||
+                     Array.from(document.querySelectorAll('a, button')).find(el => {
+                       const text = (el.innerText || '').trim();
+                       const aria = el.getAttribute('aria-label') || '';
+                       const href = el.getAttribute('href') || '';
+                       return (text === 'Connect' || aria.includes('Invite') || href.includes('custom-invite')) && el.offsetWidth > 0;
+                     });
+
+    if (!connectBtn) {
+      // Check More button fallback
+      const moreBtn = Array.from(document.querySelectorAll('button, div[role="button"]')).find(btn => 
+        btn.innerText.trim() === 'More' || btn.getAttribute('aria-label')?.includes('More')
+      );
+      if (moreBtn) {
+        simulateFullClick(moreBtn);
+        connectBtn = await waitForRegexElement(/Connect/i, 'button', 3000);
+      }
+    }
+
+    if (!connectBtn) {
+      console.warn('[Butterfly] Could not find a visible Connect button on this profile.');
+      return;
+    }
+
+    simulateFullClick(connectBtn);
+
+    // Step B: Wait for "Add a note" button via TreeWalker & Fallbacks
+    const noteBtn = await waitForRegexElement(/Add a note/i, 'button', 8000) || 
+                    document.querySelector('button[aria-label="Add a note"]');
+
+    if (!noteBtn) {
+      console.warn('[Butterfly] Timed out waiting for "Add a note" button in modal.');
+      return;
+    }
+
+    simulateFullClick(noteBtn);
+
+    // Step C: Wait for Textarea
+    const textarea = await waitForRegexElement(/./, 'textarea', 8000) || 
+                     document.querySelector('textarea[name="message"]') || 
+                     document.querySelector('.artdeco-modal textarea') ||
+                     document.querySelector('textarea');
+
+    if (!textarea) {
+      console.warn('[Butterfly] Could not find invitation message text area.');
+      return;
+    }
+
+    textarea.value = personalizedNote;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function injectEasyConnectButton() {
+    if (document.getElementById('butterfly-easy-connect-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'butterfly-easy-connect-btn';
+    btn.innerHTML = '🦋 <span>Easy Connect</span>';
+    btn.style.cssText = `
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 99999;
+      background: linear-gradient(135deg, #0a66c2, #004182);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      padding: 12px 24px;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 4px 20px rgba(10, 102, 194, 0.4);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    `;
+
+    btn.onmouseover = () => {
+      btn.style.transform = 'translateY(-2px) scale(1.02)';
+      btn.style.boxShadow = '0 6px 24px rgba(10, 102, 194, 0.5)';
+    };
+    btn.onmouseout = () => {
+      btn.style.transform = 'none';
+      btn.style.boxShadow = '0 4px 20px rgba(10, 102, 194, 0.4)';
+    };
+
+    btn.onclick = async (e) => {
+      e.preventDefault();
+      const originalContent = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> <span>Connecting...</span>';
+      btn.style.background = '#004182';
+
+      try {
+        await runEasyConnect();
+      } catch (err) {
+        console.error('[Butterfly] Easy Connect failed:', err);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalContent;
+        btn.style.background = 'linear-gradient(135deg, #0a66c2, #004182)';
+      }
+    };
+
+    document.body.appendChild(btn);
   }
 
   function injectMasterButton() {
