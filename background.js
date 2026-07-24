@@ -75,13 +75,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   const { postText, postAuthor, refinement, currentComment, platform = 'linkedin' } = message;
 
-  chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enabledPlatforms'], (result) => {
+  chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enabledPlatforms', 'humilityLevel'], (result) => {
     const apiKey = result.geminiApiKey;
     const modelMode = normalizeModelMode(result.geminiModel);
     const personalStyle = (result.personalStyle && result.personalStyle.trim())
       ? result.personalStyle.trim()
       : DEFAULT_STYLE_SAMPLES.join('\n');
     const enabledPlatforms = result.enabledPlatforms || { linkedin: true, twitter: true };
+    const humilityLevel = result.humilityLevel !== undefined ? result.humilityLevel : 2;
 
     if (enabledPlatforms[platform] === false) {
       sendResponse({ disabled: true });
@@ -93,7 +94,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
-    fetchSuggestions(postText, postAuthor, apiKey, modelMode, personalStyle, refinement, currentComment)
+    fetchSuggestions(postText, postAuthor, apiKey, modelMode, personalStyle, refinement, currentComment, humilityLevel)
       .then(res => {
         if (!res?.suggestions?.length) {
           sendResponse({ error: 'No suggestions generated. Please try again.' });
@@ -117,7 +118,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
-function buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment) {
+function buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment, humilityLevel = 2) {
   const lines = [];
 
   lines.push('[POST-AUTHOR]');
@@ -164,6 +165,25 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
     lines.push('No style examples provided. Default: casual, short, direct. Write like a real dev replying in 5 seconds.');
   }
 
+  const hVal = parseInt(humilityLevel, 10);
+  if (hVal === 2) {
+    lines.push('');
+    lines.push('[JOB HUNTING / STRATEGIC TONE: HUMBLE EXPERT]');
+    lines.push('- Demonstrate deep technical comprehension, grounded self-awareness, and genuine curiosity without boasting.');
+    lines.push('- Avoid submissive fluff ("I am just a beginner"), but avoid boastful posturing. Sound like a sharp, observant peer.');
+    lines.push('- Share grounded real-world nuances, trade-offs, or concrete observations that reveal true problem-solving skill.');
+  } else if (hVal === 3) {
+    lines.push('');
+    lines.push('[JOB HUNTING / STRATEGIC TONE: WITTY BUILDER]');
+    lines.push('- Combine intellectual depth with subtle, dry engineering humor or witty observations.');
+    lines.push('- Acknowledge real-world software quirks (debugging pain, edge cases, legacy debt) with a sharp, relatable wit.');
+    lines.push('- Keep the tone lighthearted yet smart — never forced or corny.');
+  } else {
+    lines.push('');
+    lines.push('[STRATEGIC TONE: DIRECT & CONCISE]');
+    lines.push('- Ultra-direct, minimal, and blunt. Strip out unnecessary filler.');
+  }
+
   lines.push('');
   lines.push('Generate exactly 3 LinkedIn comment variants. Each must have a DIFFERENT structure — no two can share the same form or length category:');
   lines.push('');
@@ -182,7 +202,10 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
   lines.push('- Fake personal anecdotes with zero specifics: "I\'ve experienced this too and it changed everything for me"');
   lines.push('- Em dashes used for effect to manufacture thoughtfulness');
   lines.push('- Hollow closing questions: "What do you think?", "Would love your thoughts!", "Anyone else feel this way?"');
-  lines.push('- Corporate vocabulary: leverage, synergy, ecosystem, paradigm, impactful, journey, space, game-changer, authentic, intentional, unpack, foster, navigate, pivot');
+  lines.push('- AI & Corporate buzzwords: delve, tapestry, beacon, testament, realm, interplay, synergy, ecosystem, paradigm, impactful, journey, space, game-changer, authentic, intentional, unpack, foster, navigate, pivot, cornerstone, landscape, showcase, spearhead, hallmark, endeavor, vibrant, holistic, meticulous, seamless, paramount, enduring, burgeoning, profound, multifaceted, indispensable');
+  lines.push('- Performative copulative avoidance: NEVER replace simple verbs ("is", "are", "has") with performative filler ("serves as", "stands as", "embodies", "represents", "marks")');
+  lines.push('- Negative parallelisms: NEVER format sentences as "not just X, but Y", "not X, but Y", or "X rather than Y"');
+  lines.push('- Puffery & inflated significance: NEVER claim a detail "marks a pivotal moment", "underscores the importance", "reflects broader trends", or "shapes the future"');
   lines.push('- Opening templates: "As someone who...", "In today\'s world...", "We often forget that...", "This is a reminder that..."');
   lines.push('- Any sentence that could be copy-pasted onto a completely different post');
   lines.push('');
@@ -197,6 +220,7 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
   lines.push('');
   lines.push('Match the post language exactly (French post -> French reply, Spanish -> Spanish, etc.).');
   lines.push('Never start with the author\'s name.');
+  lines.push('NEVER use Markdown formatting (*italics*, **bold**, _emphasis_, `code`). LinkedIn comment boxes are plain text, so raw markdown asterisks look like AI artifacts.');
   lines.push('Each of the 3 variants must take a clearly different angle, not just rephrase the same thought.');
   lines.push('');
   lines.push('Return ONLY valid JSON, no markdown, no explanation:');
@@ -207,13 +231,13 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
 
 // ─── API call chain ───────────────────────────────────────────────────────────
 
-async function fetchSuggestions(postText, postAuthor, apiKey, modelMode, personalStyle, refinement, currentComment) {
+async function fetchSuggestions(postText, postAuthor, apiKey, modelMode, personalStyle, refinement, currentComment, humilityLevel) {
   const models = MODEL_CHAINS[modelMode] || MODEL_CHAINS[DEFAULT_MODEL_MODE];
   let lastError;
 
   for (const model of models) {
     try {
-      return await fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment);
+      return await fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment, humilityLevel);
     } catch (err) {
       lastError = err;
       if (!isRetryable(err) || model === models[models.length - 1]) throw err;
@@ -223,7 +247,7 @@ async function fetchSuggestions(postText, postAuthor, apiKey, modelMode, persona
   throw lastError || new Error('All models exhausted');
 }
 
-async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment) {
+async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment, humilityLevel) {
   const cooldown = getCooldown(apiKey, model);
   if (cooldown > 0) {
     const err = new Error('Rate limited on ' + model + '. Retrying with fallback.');
@@ -235,7 +259,7 @@ async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle
   let lastError;
   for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
     try {
-      return await callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment);
+      return await callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment, humilityLevel);
     } catch (err) {
       lastError = err;
       if (!isTransient(err) || attempt === MAX_TRANSIENT_RETRIES) throw err;
@@ -251,10 +275,10 @@ async function fetchWithRetry(postText, postAuthor, apiKey, model, personalStyle
 // with a single prompt that returns analysis + suggestions together.
 // This cuts latency roughly in half — one network round trip instead of two.
 
-async function callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment) {
+async function callGemini(postText, postAuthor, apiKey, model, personalStyle, refinement, currentComment, humilityLevel) {
   console.log('[NetworkMaxx] Generating comments with ' + model + ' (single-call)');
 
-  const prompt = buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment);
+  const prompt = buildPrompt(postText, postAuthor, personalStyle, refinement, currentComment, humilityLevel);
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
 
   const res = await fetch(url, {
@@ -353,6 +377,22 @@ function robustParseJson(text) {
   return null;
 }
 
+function stripMarkdown(text) {
+  if (!text || typeof text !== 'string') return '';
+  let str = text;
+  // Remove markdown links [text](url) -> text
+  str = str.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  // Remove bold & italics (*word*, **word**, ***word***, _word_, __word__, ___word___)
+  str = str.replace(/(\*{1,3}|_{1,3})([^*_\n]+)\1/g, '$2');
+  // Remove strikethrough ~~word~~
+  str = str.replace(/~~([^~]+)~~/g, '$1');
+  // Remove inline code `word`
+  str = str.replace(/`([^`]+)`/g, '$1');
+  // Remove leading blockquote or header symbols
+  str = str.replace(/^[\s>#]+/, '');
+  return str.trim();
+}
+
 function flattenSuggestions(arr) {
   let results = [];
   if (!Array.isArray(arr)) return results;
@@ -385,9 +425,10 @@ function flattenSuggestions(arr) {
       }
     }
     
-    // Regular string cleanup
+    // Regular string cleanup & markdown stripping
     s = s.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
     s = s.replace(/^["']|["']$/g, '').trim();
+    s = stripMarkdown(s);
     if (s) {
       results.push(s);
     }
@@ -412,7 +453,7 @@ function parseSuggestions(text) {
   if (fallback.startsWith('{') || fallback.startsWith('[') || fallback.includes('"suggestions"')) {
     return [];
   }
-  return fallback ? [fallback] : [];
+  return fallback ? [stripMarkdown(fallback)] : [];
 }
 
 function normalizeModelMode(value) {

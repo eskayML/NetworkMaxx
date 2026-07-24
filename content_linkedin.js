@@ -1,5 +1,8 @@
 // content.js - Injects AI comment UI under LinkedIn posts
 
+const LINKEDIN_IN_ICON_SVG = `<svg class="linkedin-in-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: -2px; margin-right: 4px; display: inline-block;"><path d="M4.943 13.394V6.169H2.542v7.225h2.401zm-1.2-8.212c.837 0 1.358-.554 1.358-1.248-.015-.709-.52-1.248-1.342-1.248-.822 0-1.359.54-1.359 1.248 0 .694.521 1.248 1.327 1.248h.016zm4.908 8.212V9.359c0-.216.016-.432.08-.586.173-.431.568-.878 1.232-.878.869 0 1.216.662 1.216 1.634v3.865h2.401V9.25c0-2.22-1.184-3.252-2.764-3.252-1.274 0-1.845.7-2.165 1.193v.025h-.016a5.54 5.54 0 0 1 .016-.025V6.169h-2.4c.03.678 0 7.225 0 7.225h2.4z"/></svg>`;
+const SPARKLE_ICON_SVG = `<svg class="sparkle-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align: -1px; margin-right: 4px; display: inline-block;"><path d="M12 2L14.5 9.5L22 12L14.5 14.5L12 22L9.5 14.5L2 12L9.5 9.5L12 2Z"/></svg>`;
+
 // Function to check if extension context is still valid
 function isExtensionContextValid() {
   try {
@@ -1160,7 +1163,7 @@ const butterflyLastFillTime = new WeakMap();
     
     // Create suggest button — pill-shaped, LinkedIn blue
     const suggestBtn = document.createElement('button');
-    suggestBtn.innerHTML = '🦋 Suggest';
+    suggestBtn.innerHTML = `${LINKEDIN_IN_ICON_SVG}${SPARKLE_ICON_SVG}Suggest`;
     suggestBtn.className = 'butterfly-suggest-btn butterfly-btn';
     suggestBtn.style.cssText = 'background:#0a66c2;color:#fff;padding:5px 14px;border:none;border-radius:100px;margin-left:5px;margin-top:5px;cursor:pointer;font-size:0.82em;font-weight:600;letter-spacing:0.01em;transition:background 0.15s ease;outline:none;';
     uiContainer.appendChild(suggestBtn);
@@ -1408,8 +1411,10 @@ const butterflyLastFillTime = new WeakMap();
     ];
     const personalizedNote = noteParts.join("");
 
-    // Step A: Find & click Connect Button / Link
-    let connectBtn = findElementByTextRegex(/^Connect$/i, 'a') || 
+    // Step A: Target the exact /preload/custom-invite/ link endpoint
+    let connectBtn = document.querySelector('a[href*="custom-invite"]') ||
+                     document.querySelector('a[aria-label*="Invite"]') ||
+                     findElementByTextRegex(/^Connect$/i, 'a') || 
                      findElementByTextRegex(/Connect/i, 'button') ||
                      Array.from(document.querySelectorAll('a, button')).find(el => {
                        const text = (el.innerText || '').trim();
@@ -1425,7 +1430,7 @@ const butterflyLastFillTime = new WeakMap();
       );
       if (moreBtn) {
         simulateFullClick(moreBtn);
-        connectBtn = await waitForRegexElement(/Connect/i, 'button', 3000);
+        connectBtn = await waitForRegexElement(/Connect/i, 'button', 3000) || document.querySelector('a[href*="custom-invite"]');
       }
     }
 
@@ -1434,10 +1439,12 @@ const butterflyLastFillTime = new WeakMap();
       return;
     }
 
+    // Trigger full event sequence on the custom-invite link
     simulateFullClick(connectBtn);
 
-    // Step B: Wait for "Add a note" button via TreeWalker & Fallbacks
-    const noteBtn = await waitForRegexElement(/Add a note/i, 'button', 8000) || 
+    // Step B: Wait for "Add a note" button using exact actionbar selector verified by $0
+    const noteBtn = await waitForRegexElement(/Add a note/i, 'button', 5000) || 
+                    document.querySelector('.artdeco-modal__actionbar button') ||
                     document.querySelector('button[aria-label="Add a note"]');
 
     if (!noteBtn) {
@@ -1445,10 +1452,12 @@ const butterflyLastFillTime = new WeakMap();
       return;
     }
 
-    simulateFullClick(noteBtn);
+    noteBtn.click();
+    console.log('[Butterfly] Clicked Add a note button!');
 
-    // Step C: Wait for Textarea
-    const textarea = await waitForRegexElement(/./, 'textarea', 8000) || 
+    // Step C: Wait for #custom-message Textarea
+    const textarea = await waitForRegexElement(/./, 'textarea', 5000) || 
+                     document.querySelector('#custom-message') ||
                      document.querySelector('textarea[name="message"]') || 
                      document.querySelector('.artdeco-modal textarea') ||
                      document.querySelector('textarea');
@@ -1460,6 +1469,7 @@ const butterflyLastFillTime = new WeakMap();
 
     textarea.value = personalizedNote;
     textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    console.log('[Butterfly] Successfully injected personalized note into #custom-message!');
   }
 
   function injectEasyConnectButton() {
@@ -1467,7 +1477,7 @@ const butterflyLastFillTime = new WeakMap();
 
     const btn = document.createElement('button');
     btn.id = 'butterfly-easy-connect-btn';
-    btn.innerHTML = '🦋 <span>Easy Connect</span>';
+    btn.innerHTML = `${LINKEDIN_IN_ICON_SVG} <span>Easy Connect</span>`;
     btn.style.cssText = `
       position: fixed;
       bottom: 24px;
@@ -1524,7 +1534,7 @@ const butterflyLastFillTime = new WeakMap();
 
     const btn = document.createElement('button');
     btn.id = 'butterfly-master-generate-btn';
-    btn.innerHTML = '🦋 <span>Master Generate</span>';
+    btn.innerHTML = `${LINKEDIN_IN_ICON_SVG} <span>Master Generate</span>`;
     btn.style.cssText = `
       position: fixed;
       bottom: 24px;

@@ -210,9 +210,28 @@ linkedinToggle.addEventListener('change', function () {
   chrome.storage.sync.set({ enabledPlatforms: { linkedin: this.checked } });
 });
 
+// ─── Humility & Tone Slider ───────────────────────────────────────────────────
+
+const humilityRange = document.getElementById('humility-range');
+const toneLabel     = document.getElementById('tone-level-label');
+
+const TONE_NAMES = {
+  1: 'Direct & Concise',
+  2: 'Humble Expert',
+  3: 'Witty Builder'
+};
+
+if (humilityRange) {
+  humilityRange.addEventListener('input', function () {
+    const val = parseInt(this.value, 10);
+    if (toneLabel) toneLabel.textContent = TONE_NAMES[val] || 'Humble Expert';
+    chrome.storage.sync.set({ humilityLevel: val });
+  });
+}
+
 // ─── Load saved settings ──────────────────────────────────────────────────────
 
-chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enabledPlatforms'], (result) => {
+chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enabledPlatforms', 'humilityLevel'], (result) => {
   if (result.geminiApiKey) {
     apiKeyInput.value = result.geminiApiKey;
     showKeyPreview(result.geminiApiKey);
@@ -222,6 +241,12 @@ chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enable
     selectModel(result.geminiModel);
   } else {
     selectModel('flash');
+  }
+
+  const hVal = result.humilityLevel !== undefined ? result.humilityLevel : 2;
+  if (humilityRange) {
+    humilityRange.value = hVal;
+    if (toneLabel) toneLabel.textContent = TONE_NAMES[hVal] || 'Humble Expert';
   }
 
   if (result.personalStyle) {
