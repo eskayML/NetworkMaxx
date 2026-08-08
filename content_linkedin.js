@@ -1277,29 +1277,117 @@ const butterflyLastFillTime = new WeakMap();
   }
 
   function findCommentButton(postElement) {
-    const directBtn = postElement.querySelector('.comment-button, .social-action-bar__button, button.social-actions-button');
+    // Prefer explicit aria-label first — most reliable across LinkedIn redesigns
+    const byAriaLabel = postElement.querySelector(
+      'button[aria-label*="comment" i], button[aria-label*="Comment" i], [role="button"][aria-label*="comment" i]'
+    );
+    if (byAriaLabel) return byAriaLabel;
+
+    // Legacy class selectors
+    const directBtn = postElement.querySelector(
+      '.comment-button, .social-action-bar__button, button.social-actions-button'
+    );
     if (directBtn) return directBtn;
-    
+
+    // Walk all buttons, match text or aria-label containing "comment"
     const buttons = postElement.querySelectorAll('button');
     for (const btn of buttons) {
       const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
       const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
-      if (text.includes('comment') || ariaLabel.includes('comment')) {
-        return btn;
-      }
+      if (text.includes('comment') || ariaLabel.includes('comment')) return btn;
     }
-    
+
+    // Last resort: any visible clickable whose text content IS exactly "comment"
     const clickables = postElement.querySelectorAll('[role="button"], span, a');
     for (const el of clickables) {
       const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-      if (text === 'comment') {
-        return el;
-      }
+      if (text === 'comment') return el;
     }
     return null;
   }
 
+  // ── Returns a stable dedup key for a post element ──────────────────────────
+  function getPostKey(el) {
+    return el.dataset.urn || el.dataset.id || el.getAttribute('data-urn') || el.getAttribute('data-id') || null;
+  }
+
+  // ── Collect unique post elements currently in the DOM ──────────────────
+  // Uses the same selector + signal-check as the rest of the extension
+  // so it matches whatever LinkedIn version the user is on.
+  function collectUniquePosts() {
+    const seen = new Set();
+    const unique = [];
+    for (const el of document.querySelectorAll(LINKEDIN_POST_CONTAINER_SELECTOR)) {
+      // Only keep elements that actually look like posts (has author control, commentary, etc.)
+      if (!hasLinkedInPostSignals(el)) continue;
+      // Dedup by stable activity URN; fall back to element reference
+      const key = getPostKey(el) || el;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(el);
+    }
+    console.log('[Butterfly] collectUniquePosts found ' + unique.length + ' posts in DOM');
+    return unique;
+  }
+
+  // ── Phase 1: scroll-harvest up to targetCount unique posts ────────────────
+  // LinkedIn virtualises its feed — posts only enter the DOM as you scroll.
+  // We scroll in increments, wait for LinkedIn to paint, then collect.
+  async function harvestPostsByScrolling(targetCount, onProgress) {
+    const MAX_SCROLL_ROUNDS = 35;
+    const SCROLL_WAIT_MS   = 1500;   // wait for LinkedIn lazy-loader after each scroll
+    const STALE_ROUNDS_MAX = 5;      // stop if no new posts appear for this many rounds
+    const SCROLL_STEP_PX   = Math.round(window.innerHeight * 0.8); // scroll 80% of viewport
+
+    const seen = new Set();
+    const posts = [];
+    let staleRounds = 0;
+    let scrollY = 0;
+
+    for (let round = 0; round < MAX_SCROLL_ROUNDS; round++) {
+      // Collect whatever is currently in the DOM
+      const fresh = collectUniquePosts();
+      let addedThisRound = 0;
+      for (const el of fresh) {
+        const key = getPostKey(el) || el;
+        if (!seen.has(key)) {
+          seen.add(key);
+          posts.push(el);
+          addedThisRound++;
+        }
+      }
+
+      if (onProgress) onProgress(posts.length);
+      console.log('[Butterfly] Scroll round ' + round + ': ' + addedThisRound + ' new posts, ' + posts.length + ' total');
+
+      if (posts.length >= targetCount) break;
+
+      if (addedThisRound === 0) {
+        staleRounds++;
+        if (staleRounds >= STALE_ROUNDS_MAX) {
+          console.log('[Butterfly] Feed appears exhausted after ' + staleRounds + ' stale rounds');
+          break;
+        }
+      } else {
+        staleRounds = 0;
+      }
+
+      // Scroll down by a fixed step using absolute position (more reliable than scrollBy)
+      scrollY += SCROLL_STEP_PX;
+      window.scrollTo({ top: scrollY, behavior: 'smooth' });
+      await new Promise(r => setTimeout(r, SCROLL_WAIT_MS));
+    }
+
+    return posts.slice(0, targetCount);
+  }
+
+  // ── Phase 2: For a single post — open comment box → wait → click Suggest ──
   async function triggerSuggestForPost(postElement) {
+    // Scroll the post into view gently before interacting with it
+    postElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await new Promise(r => setTimeout(r, 500));
+
+    // Check if a comment box is already open inside this post
     let commentBox = null;
     for (const sel of COMMENT_SELECTORS) {
       commentBox = postElement.querySelector(sel);
@@ -1308,37 +1396,84 @@ const butterflyLastFillTime = new WeakMap();
 
     if (!commentBox) {
       const commentBtn = findCommentButton(postElement);
-      if (commentBtn) {
-        commentBtn.click();
-      } else {
-        return;
+      if (!commentBtn) {
+        console.warn('[Butterfly] Master Generate: no comment button found on post, skipping.');
+        return false;
       }
+      commentBtn.click();
+
+      // Wait up to 2.4s for the comment box to appear after the click
+      for (let i = 0; i < 24; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        for (const sel of COMMENT_SELECTORS) {
+          commentBox = postElement.querySelector(sel);
+          if (commentBox) break;
+        }
+        if (commentBox) break;
+      }
+
+      if (!commentBox) {
+        console.warn('[Butterfly] Master Generate: comment box never appeared, skipping.');
+        return false;
+      }
+
+      // Give scanAndFill a moment to inject the Suggest button into the new box
+      await new Promise(r => setTimeout(r, 600));
     }
 
-    // Wait up to 2 seconds for the Suggest button to be injected under this post
+    // Wait up to 3s for the Suggest button to be injected and ready
     let suggestBtn = null;
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 30; i++) {
       suggestBtn = postElement.querySelector('.butterfly-suggest-btn');
-      if (suggestBtn && !suggestBtn.disabled && suggestBtn.textContent.includes('Suggest')) {
-        break;
-      }
+      if (suggestBtn && !suggestBtn.disabled && suggestBtn.textContent.includes('Suggest')) break;
       await new Promise(r => setTimeout(r, 100));
     }
 
-    if (suggestBtn) {
-      suggestBtn.click();
+    if (!suggestBtn) {
+      console.warn('[Butterfly] Master Generate: Suggest button never appeared, skipping.');
+      return false;
     }
+
+    suggestBtn.click();
+    return true;
   }
 
-  async function runMasterGenerate() {
-    const posts = Array.from(document.querySelectorAll('.feed-shared-update-v2, .update-components-update, .occludable-update, [data-urn^="urn:li:activity"], [data-id^="urn:li:activity"]'));
-    const visiblePosts = posts.filter(isElementInViewport);
-    
-    // Stagger the triggers by 600ms to prevent hitting concurrent rate limits on the API key
-    for (let i = 0; i < visiblePosts.length; i++) {
-      triggerSuggestForPost(visiblePosts[i]);
-      await new Promise(r => setTimeout(r, 600));
+  // ── Master orchestrator ────────────────────────────────────────────────────
+  async function runMasterGenerate(updateBtnLabel) {
+    const TARGET_POSTS = 30;
+    const INTER_POST_DELAY_MS = 1400;
+
+    console.log('[Butterfly] runMasterGenerate() called');
+
+    // ── Phase 1: harvest posts via progressive scrolling ──
+    updateBtnLabel('Scanning feed...');
+    const posts = await harvestPostsByScrolling(TARGET_POSTS, (found) => {
+      updateBtnLabel('Found ' + found + ' posts...');
+    });
+
+    console.log('[Butterfly] Master Generate: harvested ' + posts.length + ' unique posts.');
+
+    if (posts.length === 0) {
+      updateBtnLabel('No posts found');
+      return;
     }
+
+    // ── Phase 2: scroll back to top, then process posts serially ──
+    updateBtnLabel('Processing ' + posts.length + ' posts...');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    await new Promise(r => setTimeout(r, 800));
+
+    let successCount = 0;
+    for (let i = 0; i < posts.length; i++) {
+      updateBtnLabel((i + 1) + ' / ' + posts.length);
+      const ok = await triggerSuggestForPost(posts[i]);
+      if (ok) successCount++;
+      if (i < posts.length - 1) {
+        await new Promise(r => setTimeout(r, INTER_POST_DELAY_MS));
+      }
+    }
+
+    console.log('[Butterfly] Master Generate: done. ' + successCount + '/' + posts.length + ' posts triggered.');
   }
 
   function simulateFullClick(el) {
@@ -1567,20 +1702,35 @@ const butterflyLastFillTime = new WeakMap();
     
     btn.onclick = async (e) => {
       e.preventDefault();
+      console.log('[Butterfly] Master Generate button clicked');
+
       const originalContent = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> <span>Generating...</span>';
       btn.style.background = '#004182';
-      
+
+      // Set loading state first, THEN define the label updater so it can find the span
+      btn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> <span id="butterfly-master-label">Scanning feed...</span>';
+
+      function updateBtnLabel(text) {
+        const span = document.getElementById('butterfly-master-label');
+        if (span) span.textContent = text;
+        else console.log('[Butterfly] label span not found, text was:', text);
+      }
+
       try {
-        await runMasterGenerate();
+        await runMasterGenerate(updateBtnLabel);
+        // Brief pause on Done before restoring
+        updateBtnLabel('Done ✓');
+        await new Promise(r => setTimeout(r, 1800));
       } catch (err) {
         console.error('[Butterfly] Master Generate failed:', err);
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalContent;
-        btn.style.background = 'linear-gradient(135deg, #0a66c2, #004182)';
+        updateBtnLabel('Error — check console');
+        await new Promise(r => setTimeout(r, 2500));
       }
+
+      btn.disabled = false;
+      btn.innerHTML = originalContent;
+      btn.style.background = 'linear-gradient(135deg, #0a66c2, #004182)';
     };
 
     document.body.appendChild(btn);
