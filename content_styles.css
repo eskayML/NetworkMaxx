@@ -18,30 +18,145 @@
 .butterfly-btn {
   background-color: #0a66c2;
   color: white;
-  padding: 6px 12px;
-  border: 1px solid #0a66c2;
+  padding: 6px 14px;
+  border: none;
   border-radius: 100px;
   margin-left: 5px;
   margin-top: 5px;
   cursor: pointer;
-  font-size: 0.85em;
-  font-weight: 600;
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  font-size: 0.82em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-shadow: 
+    0 6px 12px rgba(10, 102, 194, 0.25),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.35),
+    inset -3px -3px 6px rgba(0, 65, 130, 0.6);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  outline: none;
 }
 
-.butterfly-btn:hover {
+.butterfly-btn:hover:not(:disabled) {
   background-color: #004182;
-  border-color: #004182;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 10px 18px rgba(10, 102, 194, 0.35),
+    inset 4px 4px 8px rgba(255, 255, 255, 0.45),
+    inset -4px -4px 8px rgba(0, 65, 130, 0.7);
+}
+
+.butterfly-btn:active:not(:disabled) {
+  transform: scale(0.96) translateY(1px);
+  box-shadow: 
+    0 3px 6px rgba(10, 102, 194, 0.2),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.25),
+    inset -2px -2px 4px rgba(0, 65, 130, 0.5);
 }
 
 .butterfly-btn:disabled {
   background-color: #e0e0e0;
-  border-color: #cccccc;
   color: #8c8c8c;
   cursor: not-allowed;
-  box-shadow: none;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Claymorphic Floating Button for Master Generate / Easy Connect */
+.butterfly-floating-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  background-color: #0a66c2;
+  color: white;
+  border: none;
+  border-radius: 100px;
+  padding: 12px 24px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 
+    0 8px 16px rgba(10, 102, 194, 0.25),
+    inset 4px 4px 8px rgba(255, 255, 255, 0.4),
+    inset -4px -4px 8px rgba(0, 65, 130, 0.6);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  outline: none;
+}
+
+.butterfly-floating-btn:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 12px 24px rgba(10, 102, 194, 0.35),
+    inset 5px 5px 10px rgba(255, 255, 255, 0.5),
+    inset -5px -5px 10px rgba(0, 65, 130, 0.7);
+}
+
+.butterfly-floating-btn:active:not(:disabled) {
+  transform: scale(0.96) translateY(1px);
+  box-shadow: 
+    0 4px 8px rgba(10, 102, 194, 0.2),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.25),
+    inset -2px -2px 4px rgba(0, 65, 130, 0.5);
+}
+
+.butterfly-floating-btn:disabled {
+  background-color: #004182 !important;
+  cursor: not-allowed;
+  box-shadow: 
+    0 3px 6px rgba(10, 102, 194, 0.15),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.2),
+    inset -2px -2px 4px rgba(0, 65, 130, 0.5) !important;
+  transform: none !important;
+}
+
+/* Claymorphic X Suggest Button styling */
+.butterfly-x-btn {
+  background-color: #1d9bf0;
+  color: #ffffff;
+  border: none;
+  border-radius: 100px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 
+    0 6px 12px rgba(29, 155, 240, 0.25),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.4),
+    inset -3px -3px 6px rgba(12, 122, 191, 0.6);
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.butterfly-x-btn:hover:not(:disabled) {
+  background-color: #0c7abf;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 
+    0 10px 18px rgba(29, 155, 240, 0.35),
+    inset 4px 4px 8px rgba(255, 255, 255, 0.5),
+    inset -4px -4px 8px rgba(12, 122, 191, 0.7);
+}
+
+.butterfly-x-btn:active:not(:disabled) {
+  transform: scale(0.96) translateY(1px);
+  box-shadow: 
+    0 3px 6px rgba(29, 155, 240, 0.15),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.3),
+    inset -2px -2px 4px rgba(12, 122, 191, 0.5);
+}
+
+.butterfly-x-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .butterfly-suggestion {
@@ -63,58 +178,148 @@
 .butterfly-generate,
 .butterfly-post {
   margin-top: 2px;
-  padding: 6px 10px;
-  border-radius: 4px;
+  padding: 6px 12px;
+  border-radius: 20px;
   border: none;
   background: #0a66c2;
   color: white;
   cursor: pointer;
   font-size: 14px;
+  font-weight: 700;
+  transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .butterfly-generate {
   background: #0a66c2;
+  box-shadow: 
+    0 6px 12px rgba(10, 102, 194, 0.25),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.35),
+    inset -3px -3px 6px rgba(0, 65, 130, 0.6);
+}
+
+.butterfly-generate:hover {
+  background: #004182;
+  transform: translateY(-2px);
+  box-shadow: 
+    0 10px 18px rgba(10, 102, 194, 0.35),
+    inset 4px 4px 8px rgba(255, 255, 255, 0.45),
+    inset -4px -4px 8px rgba(0, 65, 130, 0.7);
+}
+
+.butterfly-generate:active {
+  transform: scale(0.96) translateY(1px);
 }
 
 .butterfly-post {
   background: #057642;
+  box-shadow: 
+    0 6px 12px rgba(5, 118, 66, 0.25),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.35),
+    inset -3px -3px 6px rgba(2, 60, 30, 0.6);
+}
+
+.butterfly-post:hover {
+  background: #025730;
+  transform: translateY(-2px);
+  box-shadow: 
+    0 10px 18px rgba(5, 118, 66, 0.35),
+    inset 4px 4px 8px rgba(255, 255, 255, 0.45),
+    inset -4px -4px 8px rgba(2, 60, 30, 0.7);
+}
+
+.butterfly-post:active {
+  transform: scale(0.96) translateY(1px);
 }
 
 .butterfly-regenerate-btn {
   margin-left: 0px;
   margin-top: 4px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   background: #0a66c2;
   color: white;
   border: none;
   border-radius: 100px;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 
+    0 4px 8px rgba(10, 102, 194, 0.25),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.35),
+    inset -2px -2px 4px rgba(0, 65, 130, 0.6);
+}
+
+.butterfly-regenerate-btn:hover {
+  background: #004182;
+  transform: translateY(-1.5px);
+  box-shadow: 
+    0 6px 12px rgba(10, 102, 194, 0.35),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.45),
+    inset -3px -3px 6px rgba(0, 65, 130, 0.7);
+}
+
+.butterfly-regenerate-btn:active {
+  transform: scale(0.96) translateY(0.5px);
 }
 
 .butterfly-refine-btn {
   margin-left: 8px;
   margin-top: 4px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   background: #004182;
   color: white;
   border: none;
   border-radius: 100px;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 
+    0 4px 8px rgba(0, 65, 130, 0.25),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.35),
+    inset -2px -2px 4px rgba(0, 30, 70, 0.6);
+}
+
+.butterfly-refine-btn:hover {
+  background: #002c5c;
+  transform: translateY(-1.5px);
+  box-shadow: 
+    0 6px 12px rgba(0, 65, 130, 0.35),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.45),
+    inset -3px -3px 6px rgba(0, 30, 70, 0.7);
+}
+
+.butterfly-refine-btn:active {
+  transform: scale(0.96) translateY(0.5px);
 }
 
 .butterfly-post-btn {
   margin-left: 8px;
   margin-top: 4px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   background: #057642;
   color: white;
   border: none;
   border-radius: 100px;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 
+    0 4px 8px rgba(5, 118, 66, 0.25),
+    inset 2px 2px 4px rgba(255, 255, 255, 0.35),
+    inset -2px -2px 4px rgba(2, 60, 30, 0.6);
+}
+
+.butterfly-post-btn:hover {
+  background: #025730;
+  transform: translateY(-1.5px);
+  box-shadow: 
+    0 6px 12px rgba(5, 118, 66, 0.35),
+    inset 3px 3px 6px rgba(255, 255, 255, 0.45),
+    inset -3px -3px 6px rgba(2, 60, 30, 0.7);
+}
+
+.butterfly-post-btn:active {
+  transform: scale(0.96) translateY(0.5px);
 }

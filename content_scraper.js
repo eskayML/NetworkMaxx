@@ -94,13 +94,18 @@
           background: white;
           color: #0a66c2;
           border: none;
-          border-radius: 10px;
-          padding: 9px 14px;
-          font-weight: 700;
+          border-radius: 20px;
+          padding: 10px 16px;
+          font-weight: 800;
           font-size: 13px;
           cursor: pointer;
-          transition: opacity 0.2s, transform 0.1s;
           letter-spacing: -0.1px;
+          box-shadow: 
+            0 6px 12px rgba(0, 0, 0, 0.15),
+            inset 3px 3px 6px rgba(255, 255, 255, 1),
+            inset -3px -3px 6px rgba(161, 161, 170, 0.4);
+          transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+          outline: none;
         ">⚡ Scrape My Comments</button>
       </div>
 
@@ -199,6 +204,8 @@
     scrapeBtn.disabled = true;
     scrapeBtn.textContent = 'Scraping...';
     scrapeBtn.style.opacity = '0.7';
+    scrapeBtn.style.transform = 'none';
+    scrapeBtn.style.boxShadow = 'none';
     setStatus('⏳', 'Starting — scrolling through your activity...');
     setProgress(0, target);
 
@@ -248,6 +255,10 @@
       scrapeBtn.disabled = false;
       scrapeBtn.textContent = '⚡ Try Again';
       scrapeBtn.style.opacity = '1';
+      scrapeBtn.style.background = 'white';
+      scrapeBtn.style.color = '#0a66c2';
+      scrapeBtn.style.transform = 'none';
+      scrapeBtn.style.boxShadow = '0 6px 12px rgba(0, 0, 0, 0.15), inset 3px 3px 6px rgba(255, 255, 255, 1), inset -3px -3px 6px rgba(161, 161, 170, 0.4)';
       return;
     }
 
@@ -276,11 +287,16 @@
       scrapeBtn.textContent = '✅ Done!';
       scrapeBtn.style.background = '#4ade80';
       scrapeBtn.style.color = '#14532d';
+      scrapeBtn.style.boxShadow = '0 4px 8px rgba(74, 222, 128, 0.25), inset 2px 2px 4px rgba(255, 255, 255, 1), inset -2px -2px 4px rgba(20, 83, 45, 0.4)';
     } catch (err) {
       setStatus('❌', 'Failed to save: ' + (err.message || 'Unknown error'), true);
       scrapeBtn.disabled = false;
       scrapeBtn.textContent = '⚡ Try Again';
       scrapeBtn.style.opacity = '1';
+      scrapeBtn.style.background = 'white';
+      scrapeBtn.style.color = '#0a66c2';
+      scrapeBtn.style.transform = 'none';
+      scrapeBtn.style.boxShadow = '0 6px 12px rgba(0, 0, 0, 0.15), inset 3px 3px 6px rgba(255, 255, 255, 1), inset -3px -3px 6px rgba(161, 161, 170, 0.4)';
     }
   }
 
@@ -290,10 +306,28 @@
   closeBtn.addEventListener('click', () => host.remove());
 
   scrapeBtn.addEventListener('mouseenter', () => {
-    if (!scrapeBtn.disabled) scrapeBtn.style.transform = 'scale(1.02)';
+    if (!scrapeBtn.disabled) {
+      scrapeBtn.style.transform = 'translateY(-2px) scale(1.02)';
+      scrapeBtn.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.25), inset 4px 4px 8px rgba(255, 255, 255, 1), inset -4px -4px 8px rgba(161, 161, 170, 0.5)';
+    }
   });
   scrapeBtn.addEventListener('mouseleave', () => {
-    scrapeBtn.style.transform = 'scale(1)';
+    if (!scrapeBtn.disabled) {
+      scrapeBtn.style.transform = 'scale(1)';
+      scrapeBtn.style.boxShadow = '0 6px 12px rgba(0, 0, 0, 0.15), inset 3px 3px 6px rgba(255, 255, 255, 1), inset -3px -3px 6px rgba(161, 161, 170, 0.4)';
+    }
+  });
+  scrapeBtn.addEventListener('mousedown', () => {
+    if (!scrapeBtn.disabled) {
+      scrapeBtn.style.transform = 'scale(0.96) translateY(1px)';
+      scrapeBtn.style.boxShadow = '0 3px 6px rgba(0, 0, 0, 0.1), inset 2px 2px 4px rgba(255, 255, 255, 1), inset -2px -2px 4px rgba(161, 161, 170, 0.3)';
+    }
+  });
+  scrapeBtn.addEventListener('mouseup', () => {
+    if (!scrapeBtn.disabled) {
+      scrapeBtn.style.transform = 'translateY(-2px) scale(1.02)';
+      scrapeBtn.style.boxShadow = '0 10px 20px rgba(0, 0, 0, 0.25), inset 4px 4px 8px rgba(255, 255, 255, 1), inset -4px -4px 8px rgba(161, 161, 170, 0.5)';
+    }
   });
 
 })();

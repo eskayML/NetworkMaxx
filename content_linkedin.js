@@ -1165,7 +1165,7 @@ const butterflyLastFillTime = new WeakMap();
     const suggestBtn = document.createElement('button');
     suggestBtn.innerHTML = `${LINKEDIN_IN_ICON_SVG}${SPARKLE_ICON_SVG}Suggest`;
     suggestBtn.className = 'butterfly-suggest-btn butterfly-btn';
-    suggestBtn.style.cssText = 'background:#0a66c2;color:#fff;padding:5px 14px;border:none;border-radius:100px;margin-left:5px;margin-top:5px;cursor:pointer;font-size:0.82em;font-weight:600;letter-spacing:0.01em;transition:background 0.15s ease;outline:none;';
+    suggestBtn.style.cssText = 'margin-left:5px;margin-top:5px;';
     uiContainer.appendChild(suggestBtn);
     
     // Keep Butterfly outside LinkedIn's native editor/toolbar flex row.
@@ -1315,37 +1315,110 @@ const butterflyLastFillTime = new WeakMap();
   // Uses the same selector + signal-check as the rest of the extension
   // so it matches whatever LinkedIn version the user is on.
   function collectUniquePosts() {
+    // Step 1: grab all candidates that have actual post signals
+    const candidates = Array.from(
+      document.querySelectorAll(LINKEDIN_POST_CONTAINER_SELECTOR)
+    ).filter(el => hasLinkedInPostSignals(el));
+
+    // Step 2: build a Set of candidates for fast ancestor lookup
+    const candidateSet = new Set(candidates);
+
+    // Step 3: keep only the OUTERMOST element per post.
+    // If a candidate has another candidate as an ancestor it is a nested match
+    // for the same post (e.g. inner [role="listitem"] inside .occludable-update).
+    // Drop the nested one — only the outermost element should be processed.
+    const outermost = candidates.filter(el => {
+      let parent = el.parentElement;
+      while (parent && parent !== document.body) {
+        if (candidateSet.has(parent)) return false; // el is nested inside another candidate
+        parent = parent.parentElement;
+      }
+      return true;
+    });
+
+    // Step 4: dedup by stable activity URN (handles any remaining duplicates)
     const seen = new Set();
     const unique = [];
-    for (const el of document.querySelectorAll(LINKEDIN_POST_CONTAINER_SELECTOR)) {
-      // Only keep elements that actually look like posts (has author control, commentary, etc.)
-      if (!hasLinkedInPostSignals(el)) continue;
-      // Dedup by stable activity URN; fall back to element reference
+    for (const el of outermost) {
       const key = getPostKey(el) || el;
       if (seen.has(key)) continue;
       seen.add(key);
       unique.push(el);
     }
-    console.log('[Butterfly] collectUniquePosts found ' + unique.length + ' posts in DOM');
+
+    console.log('[Butterfly] collectUniquePosts: ' + candidates.length + ' candidates → ' + unique.length + ' unique posts');
     return unique;
+  }
+
+  // ── Find LinkedIn's actual scrollable feed container ──────────────────────
+  // LinkedIn renders the feed inside a specific scrollable div, NOT window.
+  // Scrolling window alone often won't trigger its IntersectionObserver loader.
+  function getLinkedInScrollContainer() {
+    // Try known LinkedIn feed containers first
+    const candidates = [
+      document.querySelector('.scaffold-layout__main'),
+      document.querySelector('.scaffold-layout-container'),
+      document.querySelector('main'),
+      document.querySelector('#main'),
+      document.querySelector('.feed-following-feed'),
+      document.documentElement,
+      document.body
+    ];
+    for (const el of candidates) {
+      if (!el) continue;
+      const style = window.getComputedStyle(el);
+      if (style.overflowY === 'auto' || style.overflowY === 'scroll') return el;
+      if (el.scrollHeight > el.clientHeight + 100) return el;
+    }
+    return document.documentElement;
+  }
+
+  // ── Robust scroll helper: scrolls both window AND the feed container ───────
+  function scrollFeedTo(targetY) {
+    // Scroll window (needed for most pages)
+    window.scrollTo({ top: targetY, behavior: 'instant' });
+    document.documentElement.scrollTop = targetY;
+    document.body.scrollTop = targetY;
+    // Also scroll LinkedIn's internal container if there is one
+    const container = getLinkedInScrollContainer();
+    if (container !== document.documentElement && container !== document.body) {
+      container.scrollTop = targetY;
+    }
   }
 
   // ── Phase 1: scroll-harvest up to targetCount unique posts ────────────────
   // LinkedIn virtualises its feed — posts only enter the DOM as you scroll.
   // We scroll in increments, wait for LinkedIn to paint, then collect.
   async function harvestPostsByScrolling(targetCount, onProgress) {
-    const MAX_SCROLL_ROUNDS = 35;
-    const SCROLL_WAIT_MS   = 1500;   // wait for LinkedIn lazy-loader after each scroll
-    const STALE_ROUNDS_MAX = 5;      // stop if no new posts appear for this many rounds
-    const SCROLL_STEP_PX   = Math.round(window.innerHeight * 0.8); // scroll 80% of viewport
+    const MAX_SCROLL_ROUNDS = 40;
+    const SCROLL_WAIT_MS   = 1800;   // time for LinkedIn's lazy-loader to paint new posts
+    const STALE_ROUNDS_MAX = 5;      // stop if no new posts for this many rounds
+    const SCROLL_STEP_PX   = Math.round(window.innerHeight * 0.9);
 
     const seen = new Set();
     const posts = [];
     let staleRounds = 0;
     let scrollY = 0;
 
+    // Collect what's already in DOM before we touch anything
+    for (const el of collectUniquePosts()) {
+      const key = getPostKey(el) || el;
+      if (!seen.has(key)) { seen.add(key); posts.push(el); }
+    }
+    if (onProgress) onProgress(posts.length);
+    console.log('[Butterfly] Initial collect: ' + posts.length + ' posts before scrolling');
+
     for (let round = 0; round < MAX_SCROLL_ROUNDS; round++) {
-      // Collect whatever is currently in the DOM
+      if (posts.length >= targetCount) break;
+
+      // Scroll down
+      scrollY += SCROLL_STEP_PX;
+      scrollFeedTo(scrollY);
+
+      // Wait for LinkedIn to load more posts
+      await new Promise(r => setTimeout(r, SCROLL_WAIT_MS));
+
+      // Collect again after scroll
       const fresh = collectUniquePosts();
       let addedThisRound = 0;
       for (const el of fresh) {
@@ -1358,24 +1431,17 @@ const butterflyLastFillTime = new WeakMap();
       }
 
       if (onProgress) onProgress(posts.length);
-      console.log('[Butterfly] Scroll round ' + round + ': ' + addedThisRound + ' new posts, ' + posts.length + ' total');
-
-      if (posts.length >= targetCount) break;
+      console.log('[Butterfly] Round ' + (round + 1) + ': scrolled to ' + scrollY + 'px, +' + addedThisRound + ' new posts (' + posts.length + ' total)');
 
       if (addedThisRound === 0) {
         staleRounds++;
         if (staleRounds >= STALE_ROUNDS_MAX) {
-          console.log('[Butterfly] Feed appears exhausted after ' + staleRounds + ' stale rounds');
+          console.log('[Butterfly] Feed exhausted — ' + staleRounds + ' rounds with no new posts. Done at ' + posts.length + ' posts.');
           break;
         }
       } else {
         staleRounds = 0;
       }
-
-      // Scroll down by a fixed step using absolute position (more reliable than scrollBy)
-      scrollY += SCROLL_STEP_PX;
-      window.scrollTo({ top: scrollY, behavior: 'smooth' });
-      await new Promise(r => setTimeout(r, SCROLL_WAIT_MS));
     }
 
     return posts.slice(0, targetCount);
@@ -1612,43 +1678,14 @@ const butterflyLastFillTime = new WeakMap();
 
     const btn = document.createElement('button');
     btn.id = 'butterfly-easy-connect-btn';
+    btn.className = 'butterfly-floating-btn';
     btn.innerHTML = `${LINKEDIN_IN_ICON_SVG} <span>Easy Connect</span>`;
-    btn.style.cssText = `
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      z-index: 99999;
-      background: linear-gradient(135deg, #0a66c2, #004182);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 12px 24px;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 14px;
-      font-weight: 600;
-      box-shadow: 0 4px 20px rgba(10, 102, 194, 0.4);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    `;
-
-    btn.onmouseover = () => {
-      btn.style.transform = 'translateY(-2px) scale(1.02)';
-      btn.style.boxShadow = '0 6px 24px rgba(10, 102, 194, 0.5)';
-    };
-    btn.onmouseout = () => {
-      btn.style.transform = 'none';
-      btn.style.boxShadow = '0 4px 20px rgba(10, 102, 194, 0.4)';
-    };
 
     btn.onclick = async (e) => {
       e.preventDefault();
       const originalContent = btn.innerHTML;
       btn.disabled = true;
       btn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> <span>Connecting...</span>';
-      btn.style.background = '#004182';
 
       try {
         await runEasyConnect();
@@ -1657,7 +1694,6 @@ const butterflyLastFillTime = new WeakMap();
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalContent;
-        btn.style.background = 'linear-gradient(135deg, #0a66c2, #004182)';
       }
     };
 
@@ -1669,36 +1705,8 @@ const butterflyLastFillTime = new WeakMap();
 
     const btn = document.createElement('button');
     btn.id = 'butterfly-master-generate-btn';
+    btn.className = 'butterfly-floating-btn';
     btn.innerHTML = `${LINKEDIN_IN_ICON_SVG} <span>Master Generate</span>`;
-    btn.style.cssText = `
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      z-index: 99999;
-      background: linear-gradient(135deg, #0a66c2, #004182);
-      color: white;
-      border: none;
-      border-radius: 50px;
-      padding: 12px 24px;
-      font-family: system-ui, -apple-system, sans-serif;
-      font-size: 14px;
-      font-weight: 600;
-      box-shadow: 0 4px 20px rgba(10, 102, 194, 0.4);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    `;
-    
-    btn.onmouseover = () => {
-      btn.style.transform = 'translateY(-2px) scale(1.02)';
-      btn.style.boxShadow = '0 6px 24px rgba(10, 102, 194, 0.5)';
-    };
-    btn.onmouseout = () => {
-      btn.style.transform = 'none';
-      btn.style.boxShadow = '0 4px 20px rgba(10, 102, 194, 0.4)';
-    };
     
     btn.onclick = async (e) => {
       e.preventDefault();
@@ -1706,7 +1714,6 @@ const butterflyLastFillTime = new WeakMap();
 
       const originalContent = btn.innerHTML;
       btn.disabled = true;
-      btn.style.background = '#004182';
 
       // Set loading state first, THEN define the label updater so it can find the span
       btn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> <span id="butterfly-master-label">Scanning feed...</span>';
@@ -1730,7 +1737,6 @@ const butterflyLastFillTime = new WeakMap();
 
       btn.disabled = false;
       btn.innerHTML = originalContent;
-      btn.style.background = 'linear-gradient(135deg, #0a66c2, #004182)';
     };
 
     document.body.appendChild(btn);

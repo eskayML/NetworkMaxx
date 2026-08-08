@@ -64,19 +64,8 @@ function injectNetworkMaxxX(toolbarEl) {
 
   const suggestBtn = document.createElement('button');
   suggestBtn.type = 'button';
+  suggestBtn.className = 'butterfly-x-btn';
   suggestBtn.textContent = '✨ Suggest Reply';
-  suggestBtn.style.cssText = `
-    background: linear-gradient(135deg, #1d9bf0 0%, #0c7abf 100%);
-    color: #ffffff;
-    border: none;
-    border-radius: 9999px;
-    padding: 6px 14px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: opacity 0.2s, transform 0.1s;
-    box-shadow: 0 2px 6px rgba(29, 155, 240, 0.3);
-  `;
 
   const statusSpan = document.createElement('span');
   statusSpan.className = 'networkmaxx-x-status';
@@ -91,7 +80,6 @@ function injectNetworkMaxxX(toolbarEl) {
     }
 
     suggestBtn.disabled = true;
-    suggestBtn.style.opacity = '0.6';
     statusSpan.textContent = 'Thinking...';
 
     chrome.runtime.sendMessage({
@@ -101,7 +89,6 @@ function injectNetworkMaxxX(toolbarEl) {
       platform: 'twitter'
     }, (response) => {
       suggestBtn.disabled = false;
-      suggestBtn.style.opacity = '1';
 
       if (chrome.runtime.lastError || !response || response.error) {
         statusSpan.textContent = (response && response.error) ? response.error : 'Failed to generate.';

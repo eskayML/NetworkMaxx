@@ -22,6 +22,9 @@ FILES=(
   popup.js
   styles.css
   content_styles.css
+  icon16.png
+  icon32.png
+  icon48.png
   icon128.png
   content_linkedin.js
   content_twitter.js
@@ -30,6 +33,7 @@ FILES=(
   slop_list.json
   slop_list_bigrams.json
   slop_list_trigrams.json
+  LICENSE
 )
 
 zip -r "$OUT_FILE" "${FILES[@]}"
