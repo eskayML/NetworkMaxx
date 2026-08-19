@@ -334,3 +334,116 @@
   box-sizing: border-box;
 }
 
+/* Easy Connect Floating Offer Picker */
+.butterfly-offer-popover {
+  position: fixed;
+  bottom: 80px;
+  right: 24px;
+  width: 360px;
+  max-width: calc(100vw - 48px);
+  background: #ffffff;
+  border: 1px solid #d0d7de;
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(10, 102, 194, 0.12);
+  padding: 14px;
+  z-index: 100000;
+  font-family: system-ui, -apple-system, sans-serif;
+  box-sizing: border-box;
+  animation: butterfly-pill-in 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.butterfly-offer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.butterfly-offer-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #004182;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.butterfly-offer-target {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.butterfly-offer-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  line-height: 1;
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.butterfly-offer-close:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.butterfly-offer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.butterfly-offer-card {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  position: relative;
+}
+
+.butterfly-offer-card:hover {
+  background: #f0f7ff;
+  border-color: #0a66c2;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(10, 102, 194, 0.15);
+}
+
+.butterfly-offer-card:active {
+  transform: scale(0.98);
+}
+
+.butterfly-offer-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0a66c2;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.butterfly-offer-action-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: #0284c7;
+  opacity: 0.85;
+}
+
+.butterfly-offer-text {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #1e293b;
+  word-break: break-word;
+  white-space: pre-wrap;
+  font-weight: 500;
+}
+
+

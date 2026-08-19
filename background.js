@@ -313,20 +313,20 @@ function buildConnectionNotePrompt({ fullName, firstName, headline, company, abo
   lines.push('[/MY-IDENTITY & PROVEN WORK]');
   lines.push('');
 
-  lines.push('GOAL: Write 3 human, high-converting LinkedIn connection request notes using Alex Hormozi $100M Offers & raw builder outreach.');
+  lines.push('GOAL: Write 3 human, high-converting LinkedIn connection request notes from a young, hungry, cracked AI engineer & entrepreneur (Samuel Kalu / eskayML).');
   lines.push('');
   lines.push('CRITICAL RULES (VIOLATING THESE PRODUCES AI SLOP):');
   lines.push('1. ABSOLUTELY NO SIGN-OFF: NEVER write "Samuel Kalu", "Samuel", "Best", or any name at the end. LinkedIn already shows the sender name.');
   lines.push('2. NO EM DASHES: NEVER use "—" or "--". Use normal commas or short sentences.');
   lines.push('3. NEVER QUOTE THEIR HEADLINE: Never write "your headline \'...\' really resonates" or "I saw you translate AI". That is instant AI cringe.');
-  lines.push('4. NO AI CORPORATE CLICHES: Ban "really resonates", "genuinely fascinating", "that bridge is fascinating", "I hope this finds you well", "I came across your profile", "would love to connect and synergy".');
-  lines.push('5. LOWERCASE & HUMAN: Start sentences with lowercase like "hey ' + targetName + ',". Real engineers talk casually and directly.');
+  lines.push('4. NO AI CORPORATE CLICHES OR DISCLAIMERS: Ban "zero sales pitch", "zero catch", "really resonates", "genuinely fascinating", "that bridge is fascinating", "I hope this finds you well", "I came across your profile", "would love to connect and synergy". Real builders do not use disclaimers.');
+  lines.push('5. LOWERCASE & HUMAN: Start sentences with lowercase like "hey ' + targetName + ',". Write like an ambitious builder DMing another founder on Twitter/LinkedIn.');
   lines.push('6. HARD LIMIT: Under 260 characters each.');
   lines.push('');
   lines.push('THE 3 OFFERS TO GENERATE:');
-  lines.push('VARIANT 1 (HORMOZI $100M OFFER — SELFISH FREE AUDIT): Transparent self-interest + zero risk. Example: "hey ' + targetName + ', might sound selfish, but i\'m building case studies for my AI portfolio. put together a free teardown on how ' + targetCompany + ' can automate manual workflows. zero sales pitch, just wanted to share."');
-  lines.push('VARIANT 2 (AI JOB / WORK INQUIRY): Sharp AI engineer peer asking about their stack. Example: "hey ' + targetName + ', saw what you\'re building at ' + targetCompany + '. i\'m an ai engineer specializing in agents and stealth scraping (leadork, durag). curious if your team is exploring custom workflows or hiring this quarter?"');
-  lines.push('VARIANT 3 (SPECIFIC BOTTLENECK TEARDOWN): Ultra-direct value drop. Example: "hey ' + targetName + ', did a quick breakdown of where ' + targetCompany + ' might be losing hours on manual data tasks. zero catch, just trying to sharpen my case studies. mind if i share the summary?"');
+  lines.push('VARIANT 1 (WORKFLOW TEARDOWN / CASE STUDY): "hey ' + targetName + ', building case studies for my AI portfolio and put together a teardown of how ' + targetCompany + ' could automate its data pipelines. mind if i send the breakdown over?"');
+  lines.push('VARIANT 2 (CRACKED AI BUILDER INQUIRY): "hey ' + targetName + ', saw what you\'re building at ' + targetCompany + '. i build production AI agents and stealth scrapers (leadork, durag). curious if you\'re looking for cracked engineers or tackling hard automation bottlenecks right now?"');
+  lines.push('VARIANT 3 (SPECIFIC AUTOMATION WIN): "hey ' + targetName + ', looked into ' + targetCompany + ' and mapped out 2 quick ways to cut manual scraping hours with custom agents. cool if i share the doc?"');
   lines.push('');
   lines.push('Return ONLY valid JSON:');
   lines.push('{"notes": ["note 1", "note 2", "note 3"]}');

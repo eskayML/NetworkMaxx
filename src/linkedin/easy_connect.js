@@ -1,8 +1,8 @@
 // src/linkedin/easy_connect.js — Intelligent Personalized Connect Engine (Hormozi $100M Offers + Voyager API + Template Selector)
 'use strict';
 
-const DEFAULT_HORMOZI_TEMPLATE = `hey {firstName}, might sound selfish, but i'm building case studies for my AI portfolio. put together a free audit on how {company} can automate its workflows. zero sales pitch, just wanted to send it over.`;
-const DEFAULT_JOB_TEMPLATE = `hey {firstName}, saw what you're building at {company}. i'm an ai engineer specializing in agents and stealth scraping (leadork, durag). curious if you're exploring custom workflows or hiring this quarter?`;
+const DEFAULT_HORMOZI_TEMPLATE = `hey {firstName}, building case studies for my AI portfolio and put together a teardown of how {company} could automate its data pipelines. mind if i send the breakdown over?`;
+const DEFAULT_JOB_TEMPLATE = `hey {firstName}, saw what you're building at {company}. i build production AI agents and stealth scrapers (leadork, durag). curious if you're looking for cracked engineers or tackling hard automation bottlenecks right now?`;
 
 // ─── CSRF Token & Auth Helpers ───────────────────────────────────────────────
 
@@ -462,8 +462,8 @@ async function injectModalOfferPills(textarea) {
     <div style="font-size: 11px; font-weight: 700; color: #004182; width: 100%; display: flex; align-items: center; gap: 4px; margin-bottom: 2px;">
       ${SPARKLE_ICON_SVG} NetworkMaxx Quick Offers
     </div>
-    <button type="button" class="butterfly-pill" id="pill-hormozi" style="flex: 1; padding: 4px 8px; font-size: 11px;">⚡ Free Audit</button>
-    <button type="button" class="butterfly-pill" id="pill-job" style="flex: 1; padding: 4px 8px; font-size: 11px;">🎯 Job Inquiry</button>
+    <button type="button" class="butterfly-pill" id="pill-hormozi" style="flex: 1; padding: 4px 8px; font-size: 11px;">⚡ Free Teardown</button>
+    <button type="button" class="butterfly-pill" id="pill-job" style="flex: 1; padding: 4px 8px; font-size: 11px;">🎯 Builder Inquiry</button>
     <button type="button" class="butterfly-pill" id="pill-ai" style="flex: 1; padding: 4px 8px; font-size: 11px;">🤖 AI Context</button>
   `;
 
@@ -497,45 +497,138 @@ async function injectModalOfferPills(textarea) {
   textarea.parentElement.insertBefore(bar, textarea);
 }
 
-// ─── Master Easy Connect Execution Flow ──────────────────────────────────────
+// ─── Floating Offer Options Popover (Semi-Automated Selector) ────────────────
 
-async function runEasyConnect(forcedMode = null, forceReview = false) {
-  console.log('%c[NetworkMaxx:EasyConnect] === STARTING CONNECT FLOW ===', 'color: #00d2ff; font-weight: bold; font-size: 13px;');
+function closeOfferPopover() {
+  const existing = document.querySelector('.butterfly-offer-popover');
+  if (existing) existing.remove();
+}
+
+async function openFloatingOfferPicker(targetBtn) {
+  const existing = document.querySelector('.butterfly-offer-popover');
+  if (existing) {
+    existing.remove();
+    return;
+  }
 
   const profileData = extractTargetProfileData();
-  console.log('[NetworkMaxx:EasyConnect] Target Profile Data:', profileData);
+  const hormoziNote = await getOutreachNoteForProfile(profileData, 'hormozi_audit');
+  const jobNote     = await getOutreachNoteForProfile(profileData, 'job_inquiry');
 
-  const selectedNote = await getOutreachNoteForProfile(profileData, forcedMode);
-  console.log('[NetworkMaxx:EasyConnect] Prepared Note:', selectedNote);
+  const popover = document.createElement('div');
+  popover.className = 'butterfly-offer-popover';
 
-  // Check if review mode is requested in settings
-  const shouldReview = forceReview || await new Promise(r => chrome.storage.sync.get(['reviewBeforeSend'], res => r(res.reviewBeforeSend === true)));
+  const targetName = profileData.firstName || 'there';
+  const targetComp = (profileData.company && profileData.company !== 'your team') ? profileData.company : '';
 
-  // If review is NOT requested, attempt direct Voyager API dispatch first
-  if (!shouldReview) {
-    const memberUrn = await extractTargetMemberUrn();
-    if (memberUrn) {
-      console.log('%c[NetworkMaxx:EasyConnect] Dispatching via Voyager API...', 'color: #00ff88; font-weight: bold;');
-      try {
-        await sendVoyagerConnectionRequest(memberUrn, selectedNote);
-        showFloatingToast(`Invitation sent with offer to ${profileData.firstName || 'member'}!`, 'success');
-        return;
-      } catch (apiError) {
-        console.warn('[NetworkMaxx:EasyConnect] Voyager API error, falling back to UI modal:', apiError);
-        if (apiError.status === 429) {
-          showFloatingToast('LinkedIn connection quota limit reached.', 'warn');
-          return;
-        }
+  popover.innerHTML = `
+    <div class="butterfly-offer-header">
+      <div>
+        <div class="butterfly-offer-title">${SPARKLE_ICON_SVG} Choose Connection Offer</div>
+        <div class="butterfly-offer-target">for ${targetName} ${targetComp ? '@ ' + targetComp : ''}</div>
+      </div>
+      <button type="button" class="butterfly-offer-close" title="Close">✕</button>
+    </div>
+
+    <div class="butterfly-offer-stack">
+      <!-- Option 1: Workflow Teardown -->
+      <div class="butterfly-offer-card" id="offer-card-hormozi">
+        <div class="butterfly-offer-badge">
+          <span>⚡ Free Workflow Teardown</span>
+          <span class="butterfly-offer-action-hint">Click to Send ➔</span>
+        </div>
+        <div class="butterfly-offer-text">${hormoziNote}</div>
+      </div>
+
+      <!-- Option 2: Cracked AI Builder Inquiry -->
+      <div class="butterfly-offer-card" id="offer-card-job">
+        <div class="butterfly-offer-badge">
+          <span>🎯 Cracked AI Builder Inquiry</span>
+          <span class="butterfly-offer-action-hint">Click to Send ➔</span>
+        </div>
+        <div class="butterfly-offer-text">${jobNote}</div>
+      </div>
+    </div>
+
+    <div style="margin-top: 10px; padding-top: 8px; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-size: 10.5px; color: #64748b;">Semi-Automated • 1-Click Send</span>
+      <button type="button" class="butterfly-modal-edit-link" id="offer-edit-modal-btn" style="background: none; border: none; font-size: 11px; font-weight: 700; color: #0a66c2; cursor: pointer; text-decoration: underline;">
+        Edit in Modal First
+      </button>
+    </div>
+  `;
+
+  popover.querySelector('.butterfly-offer-close').onclick = (e) => {
+    e.preventDefault();
+    closeOfferPopover();
+  };
+
+  async function handleOptionSelect(cardEl, chosenNote, forceReview = false) {
+    const origBadge = cardEl ? cardEl.querySelector('.butterfly-offer-action-hint') : null;
+    if (origBadge) origBadge.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> Sending...';
+    if (cardEl) cardEl.style.pointerEvents = 'none';
+
+    try {
+      if (forceReview) {
+        closeOfferPopover();
+        await executeModalInjection(chosenNote);
+      } else {
+        await executeDirectConnectionSend(chosenNote, profileData);
+        closeOfferPopover();
       }
+    } catch (err) {
+      console.error('[NetworkMaxx:EasyConnect] Send failed:', err);
+      showFloatingToast('Failed to send request. Trying modal...', 'warn');
+      closeOfferPopover();
+      await executeModalInjection(chosenNote);
     }
   }
 
-  // UI Modal Flow (when reviewing or when direct API needs confirmation)
+  popover.querySelector('#offer-card-hormozi').onclick = (e) => {
+    e.preventDefault();
+    handleOptionSelect(popover.querySelector('#offer-card-hormozi'), hormoziNote, false);
+  };
+
+  popover.querySelector('#offer-card-job').onclick = (e) => {
+    e.preventDefault();
+    handleOptionSelect(popover.querySelector('#offer-card-job'), jobNote, false);
+  };
+
+  popover.querySelector('#offer-edit-modal-btn').onclick = (e) => {
+    e.preventDefault();
+    handleOptionSelect(null, hormoziNote, true);
+  };
+
+  document.body.appendChild(popover);
+}
+
+// ─── Direct Send and Modal Execution Engines ─────────────────────────────────
+
+async function executeDirectConnectionSend(note, profileData) {
+  const memberUrn = await extractTargetMemberUrn();
+  if (memberUrn) {
+    console.log('%c[NetworkMaxx:EasyConnect] Dispatching via Voyager API...', 'color: #00ff88; font-weight: bold;');
+    try {
+      await sendVoyagerConnectionRequest(memberUrn, note);
+      showFloatingToast(`Invitation sent with offer to ${profileData.firstName || 'member'}!`, 'success');
+      return;
+    } catch (apiError) {
+      console.warn('[NetworkMaxx:EasyConnect] Voyager direct API failed, falling back to modal:', apiError);
+      if (apiError.status === 429) {
+        showFloatingToast('LinkedIn connection quota limit reached.', 'warn');
+        return;
+      }
+    }
+  }
+  await executeModalInjection(note);
+}
+
+async function executeModalInjection(note) {
   const topCard = document.querySelector('div[id*="Topcard"], section[componentkey*="Topcard"], .pv-top-card, main#workspace section, section.artdeco-card') || document.body;
 
   let textarea = findInviteTextareaInDOM();
   if (textarea) {
-    setEmberTextareaValue(textarea, selectedNote);
+    setEmberTextareaValue(textarea, note);
     showFloatingToast('Offer note injected! Click Send to confirm.', 'success');
     return;
   }
@@ -546,7 +639,7 @@ async function runEasyConnect(forcedMode = null, forceReview = false) {
     await new Promise(r => setTimeout(r, 600));
     textarea = await waitForInviteTextarea(5000);
     if (textarea) {
-      setEmberTextareaValue(textarea, selectedNote);
+      setEmberTextareaValue(textarea, note);
       showFloatingToast('Offer note injected! Click Send to confirm.', 'success');
       return;
     }
@@ -588,14 +681,14 @@ async function runEasyConnect(forcedMode = null, forceReview = false) {
 
   textarea = await waitForInviteTextarea(6000);
   if (textarea) {
-    setEmberTextareaValue(textarea, selectedNote);
+    setEmberTextareaValue(textarea, note);
     showFloatingToast('Offer note injected! Click Send to confirm.', 'success');
   } else {
     showFloatingToast('Invitation modal opened. Please add your note and send.', 'warn');
   }
 }
 
-// ─── Floating Button & Dropdown Menu ─────────────────────────────────────────
+// ─── Floating Button Injection ───────────────────────────────────────────────
 
 function injectEasyConnectButton() {
   if (document.getElementById('butterfly-easy-connect-btn')) return;
@@ -619,19 +712,8 @@ function injectEasyConnectButton() {
 
   btn.onclick = async (e) => {
     e.preventDefault();
-    const orig = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="butterfly-dots-loader"><span></span><span></span><span></span></span> <span>Connecting...</span>';
-
-    try {
-      await runEasyConnect();
-    } catch (err) {
-      console.error('[NetworkMaxx:EasyConnect] Error:', err);
-      showFloatingToast('Failed to complete connection request.', 'error');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = orig;
-    }
+    e.stopPropagation();
+    await openFloatingOfferPicker(btn);
   };
 
   container.appendChild(btn);
@@ -640,11 +722,12 @@ function injectEasyConnectButton() {
 }
 
 if (typeof window !== 'undefined') {
-  window.__easyConnect = runEasyConnect;
+  window.__easyConnect = openFloatingOfferPicker;
   window.__extractTargetProfileData = extractTargetProfileData;
   window.__extractTargetMemberUrn = extractTargetMemberUrn;
   window.__sendVoyagerConnectionRequest = sendVoyagerConnectionRequest;
   window.__getOutreachNoteForProfile = getOutreachNoteForProfile;
 }
+
 
 

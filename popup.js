@@ -231,9 +231,10 @@ if (humilityRange) {
 
 // ─── Easy Connect & Outreach Templates ────────────────────────────────────────
 
-const DEFAULT_HORMOZI_TEMPLATE = `hey {firstName}, might sound selfish, but i'm building case studies for my AI portfolio. put together a free audit on how {company} can automate its workflows. zero sales pitch, just wanted to send it over.`;
+const DEFAULT_HORMOZI_TEMPLATE = `hey {firstName}, building case studies for my AI portfolio and put together a teardown of how {company} could automate its data pipelines. mind if i send the breakdown over?`;
 
-const DEFAULT_JOB_TEMPLATE = `hey {firstName}, saw what you're building at {company}. i'm an ai engineer specializing in agents and stealth scraping (leadork, durag). curious if you're exploring custom workflows or hiring this quarter?`;
+const DEFAULT_JOB_TEMPLATE = `hey {firstName}, saw what you're building at {company}. i build production AI agents and stealth scrapers (leadork, durag). curious if you're looking for cracked engineers or tackling hard automation bottlenecks right now?`;
+
 
 const hormoziTextarea = document.getElementById('template-hormozi');
 const jobTextarea     = document.getElementById('template-job');
