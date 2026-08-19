@@ -229,9 +229,83 @@ if (humilityRange) {
   });
 }
 
+// ─── Easy Connect & Outreach Templates ────────────────────────────────────────
+
+const DEFAULT_HORMOZI_TEMPLATE = `hey {firstName}, might sound selfish, but i'm building case studies for my AI portfolio. put together a free audit on how {company} can automate its workflows. zero sales pitch, just wanted to send it over.`;
+
+const DEFAULT_JOB_TEMPLATE = `hey {firstName}, saw what you're building at {company}. i'm an ai engineer specializing in agents and stealth scraping (leadork, durag). curious if you're exploring custom workflows or hiring this quarter?`;
+
+const hormoziTextarea = document.getElementById('template-hormozi');
+const jobTextarea     = document.getElementById('template-job');
+const hormoziCountEl  = document.getElementById('hormozi-char-count');
+const jobCountEl      = document.getElementById('job-char-count');
+const modeHormoziBtn  = document.getElementById('mode-hormozi');
+const modeJobBtn      = document.getElementById('mode-job');
+const reviewToggle    = document.getElementById('review-before-send');
+
+let currentConnectMode = 'hormozi_audit';
+let hormoziTimeout, jobTimeout;
+
+function updateCharCount(textarea, countEl) {
+  if (!textarea || !countEl) return;
+  const len = textarea.value.length;
+  countEl.textContent = `${len}/300`;
+  countEl.style.color = len > 300 ? '#dc2626' : (len > 260 ? '#d97706' : '#71717a');
+}
+
+function setConnectMode(mode) {
+  currentConnectMode = mode;
+  chrome.storage.sync.set({ connectMode: mode });
+
+  if (mode === 'job_inquiry') {
+    modeJobBtn?.classList.remove('btn-outline');
+    modeJobBtn?.classList.add('btn-primary');
+    modeHormoziBtn?.classList.remove('btn-primary');
+    modeHormoziBtn?.classList.add('btn-outline');
+  } else {
+    modeHormoziBtn?.classList.remove('btn-outline');
+    modeHormoziBtn?.classList.add('btn-primary');
+    modeJobBtn?.classList.remove('btn-primary');
+    modeJobBtn?.classList.add('btn-outline');
+  }
+}
+
+modeHormoziBtn?.addEventListener('click', () => setConnectMode('hormozi_audit'));
+modeJobBtn?.addEventListener('click', () => setConnectMode('job_inquiry'));
+
+hormoziTextarea?.addEventListener('input', function () {
+  updateCharCount(this, hormoziCountEl);
+  clearTimeout(hormoziTimeout);
+  hormoziTimeout = setTimeout(() => {
+    chrome.storage.sync.set({ templateFreeAudit: this.value.trim() });
+  }, 400);
+});
+
+jobTextarea?.addEventListener('input', function () {
+  updateCharCount(this, jobCountEl);
+  clearTimeout(jobTimeout);
+  jobTimeout = setTimeout(() => {
+    chrome.storage.sync.set({ templateJobInquiry: this.value.trim() });
+  }, 400);
+});
+
+reviewToggle?.addEventListener('change', function () {
+  chrome.storage.sync.set({ reviewBeforeSend: this.checked });
+});
+
 // ─── Load saved settings ──────────────────────────────────────────────────────
 
-chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enabledPlatforms', 'humilityLevel'], (result) => {
+chrome.storage.sync.get([
+  'geminiApiKey',
+  'geminiModel',
+  'personalStyle',
+  'enabledPlatforms',
+  'humilityLevel',
+  'connectMode',
+  'templateFreeAudit',
+  'templateJobInquiry',
+  'reviewBeforeSend'
+], (result) => {
   if (result.geminiApiKey) {
     apiKeyInput.value = result.geminiApiKey;
     showKeyPreview(result.geminiApiKey);
@@ -262,4 +336,25 @@ chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'enable
   if (platforms) {
     linkedinToggle.checked = platforms.linkedin !== false;
   }
+
+  // Easy Connect template initializations
+  const savedHormozi = result.templateFreeAudit || DEFAULT_HORMOZI_TEMPLATE;
+  const savedJob = result.templateJobInquiry || DEFAULT_JOB_TEMPLATE;
+
+  if (hormoziTextarea) {
+    hormoziTextarea.value = savedHormozi;
+    updateCharCount(hormoziTextarea, hormoziCountEl);
+  }
+
+  if (jobTextarea) {
+    jobTextarea.value = savedJob;
+    updateCharCount(jobTextarea, jobCountEl);
+  }
+
+  if (reviewToggle) {
+    reviewToggle.checked = result.reviewBeforeSend === true;
+  }
+
+  setConnectMode(result.connectMode || 'hormozi_audit');
 });
+

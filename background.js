@@ -71,6 +71,44 @@ const DEFAULT_STYLE_SAMPLES = [
 // ─── Message listener ────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'GEMINI_CONNECT_NOTE') {
+    const { fullName, firstName, headline, company, aboutText, recentPostText } = message;
+
+    chrome.storage.sync.get(['geminiApiKey', 'geminiModel', 'personalStyle', 'humilityLevel'], (result) => {
+      const apiKey = result.geminiApiKey;
+      const modelMode = normalizeModelMode(result.geminiModel);
+      const personalStyle = (result.personalStyle && result.personalStyle.trim())
+        ? result.personalStyle.trim()
+        : DEFAULT_STYLE_SAMPLES.join('\n');
+      const humilityLevel = result.humilityLevel !== undefined ? result.humilityLevel : 2;
+
+      if (!apiKey) {
+        sendResponse({ error: 'Open NetworkMaxx settings and paste your Gemini API key to get started.' });
+        return;
+      }
+
+      fetchConnectionNotes({ fullName, firstName, headline, company, aboutText, recentPostText }, apiKey, modelMode, personalStyle, humilityLevel)
+        .then(res => {
+          if (!res?.notes?.length) {
+            sendResponse({ error: 'No connection notes generated. Please try again.' });
+          } else {
+            sendResponse({ notes: res.notes, debugPrompt: res.debugPrompt });
+          }
+        })
+        .catch(e => {
+          let msg = 'Failed to generate connection note. Try again.';
+          if (e?.message?.includes('403') || e?.message?.includes('API_KEY_INVALID')) {
+            msg = 'Invalid API key. Check your NetworkMaxx settings.';
+          } else if (e?.status === 429) {
+            msg = 'Rate limit hit. Wait a moment and try again.';
+          }
+          sendResponse({ error: msg });
+        });
+    });
+
+    return true; // keep channel open for async response
+  }
+
   if (message.type !== 'GEMINI_SUGGEST') return;
 
   const { postText, postAuthor, refinement, currentComment, platform = 'linkedin' } = message;
@@ -229,7 +267,182 @@ function buildPrompt(postText, postAuthor, personalStyle, refinement, currentCom
   return lines.join('\n');
 }
 
+// ─── Connection Note Prompt Builder ──────────────────────────────────────────
+
+function cleanConnectionNote(note) {
+  if (!note || typeof note !== 'string') return '';
+  let str = stripMarkdown(note).trim();
+
+  // Strip em dashes and double dashes
+  str = str.replace(/—/g, ', ').replace(/--/g, ', ');
+
+  // Remove signature lines at end (e.g. "Samuel Kalu", "Samuel", "- Sam", "Best, Samuel")
+  str = str.replace(/\s*[-–~]*\s*(?:Best regards|Regards|Best|Thanks|Cheers|Sincerely|Warmly|Respectfully)?\s*,?\s*(?:Samuel(?:\s+Kalu)?|eskayML)\s*$/i, '');
+  str = str.replace(/\s*Samuel\s+Kalu\s*$/i, '');
+  str = str.replace(/\s*Samuel\s*$/i, '');
+
+  // Strip surrounding quotes
+  str = str.replace(/^["']|["']$/g, '').trim();
+
+  // Ensure length cap
+  if (str.length > 280) {
+    str = str.slice(0, 275).trim() + '...';
+  }
+
+  return str;
+}
+
+function buildConnectionNotePrompt({ fullName, firstName, headline, company, aboutText, recentPostText }, personalStyle, humilityLevel = 2) {
+  const lines = [];
+
+  const targetName = firstName || 'there';
+  const targetCompany = (company && company !== 'your team') ? company : 'your company';
+
+  lines.push('[TARGET-PROFILE]');
+  lines.push('Target Name: ' + targetName);
+  if (headline) lines.push('Target Headline: ' + headline);
+  lines.push('Target Company: ' + targetCompany);
+  if (aboutText) lines.push('Target About: ' + aboutText.slice(0, 200));
+  if (recentPostText) lines.push('Target Recent Post: ' + recentPostText.slice(0, 200));
+  lines.push('[/TARGET-PROFILE]');
+  lines.push('');
+
+  lines.push('[MY-IDENTITY & PROVEN WORK]');
+  lines.push('I am Samuel Kalu (eskayML) — AI / ML Engineer.');
+  lines.push('What I build: production agentic systems, Graph RAG (Du-RAG for persistent LLM memory), stealth scrapers & data pipelines (Leadork, Camoufox/Playwright), and AI forensic verification (Sourcemap Africa).');
+  lines.push('[/MY-IDENTITY & PROVEN WORK]');
+  lines.push('');
+
+  lines.push('GOAL: Write 3 human, high-converting LinkedIn connection request notes using Alex Hormozi $100M Offers & raw builder outreach.');
+  lines.push('');
+  lines.push('CRITICAL RULES (VIOLATING THESE PRODUCES AI SLOP):');
+  lines.push('1. ABSOLUTELY NO SIGN-OFF: NEVER write "Samuel Kalu", "Samuel", "Best", or any name at the end. LinkedIn already shows the sender name.');
+  lines.push('2. NO EM DASHES: NEVER use "—" or "--". Use normal commas or short sentences.');
+  lines.push('3. NEVER QUOTE THEIR HEADLINE: Never write "your headline \'...\' really resonates" or "I saw you translate AI". That is instant AI cringe.');
+  lines.push('4. NO AI CORPORATE CLICHES: Ban "really resonates", "genuinely fascinating", "that bridge is fascinating", "I hope this finds you well", "I came across your profile", "would love to connect and synergy".');
+  lines.push('5. LOWERCASE & HUMAN: Start sentences with lowercase like "hey ' + targetName + ',". Real engineers talk casually and directly.');
+  lines.push('6. HARD LIMIT: Under 260 characters each.');
+  lines.push('');
+  lines.push('THE 3 OFFERS TO GENERATE:');
+  lines.push('VARIANT 1 (HORMOZI $100M OFFER — SELFISH FREE AUDIT): Transparent self-interest + zero risk. Example: "hey ' + targetName + ', might sound selfish, but i\'m building case studies for my AI portfolio. put together a free teardown on how ' + targetCompany + ' can automate manual workflows. zero sales pitch, just wanted to share."');
+  lines.push('VARIANT 2 (AI JOB / WORK INQUIRY): Sharp AI engineer peer asking about their stack. Example: "hey ' + targetName + ', saw what you\'re building at ' + targetCompany + '. i\'m an ai engineer specializing in agents and stealth scraping (leadork, durag). curious if your team is exploring custom workflows or hiring this quarter?"');
+  lines.push('VARIANT 3 (SPECIFIC BOTTLENECK TEARDOWN): Ultra-direct value drop. Example: "hey ' + targetName + ', did a quick breakdown of where ' + targetCompany + ' might be losing hours on manual data tasks. zero catch, just trying to sharpen my case studies. mind if i share the summary?"');
+  lines.push('');
+  lines.push('Return ONLY valid JSON:');
+  lines.push('{"notes": ["note 1", "note 2", "note 3"]}');
+
+  return lines.join('\n');
+}
+
 // ─── API call chain ───────────────────────────────────────────────────────────
+
+async function fetchConnectionNotes(profileData, apiKey, modelMode, personalStyle, humilityLevel) {
+  const models = MODEL_CHAINS[modelMode] || MODEL_CHAINS[DEFAULT_MODEL_MODE];
+  let lastError;
+
+  for (const model of models) {
+    try {
+      return await fetchConnectionNotesWithRetry(profileData, apiKey, model, personalStyle, humilityLevel);
+    } catch (err) {
+      lastError = err;
+      if (!isRetryable(err) || model === models[models.length - 1]) throw err;
+      console.warn('[NetworkMaxx:ConnectNotes] ' + model + ' failed, trying next model...');
+    }
+  }
+  throw lastError || new Error('All models exhausted');
+}
+
+async function fetchConnectionNotesWithRetry(profileData, apiKey, model, personalStyle, humilityLevel) {
+  const cooldown = getCooldown(apiKey, model);
+  if (cooldown > 0) {
+    const err = new Error('Rate limited on ' + model + '. Retrying with fallback.');
+    err.status = 429;
+    err.retryNextModel = true;
+    throw err;
+  }
+
+  let lastError;
+  for (let attempt = 0; attempt <= MAX_TRANSIENT_RETRIES; attempt++) {
+    try {
+      return await callGeminiForConnectionNotes(profileData, apiKey, model, personalStyle, humilityLevel);
+    } catch (err) {
+      lastError = err;
+      if (!isTransient(err) || attempt === MAX_TRANSIENT_RETRIES) throw err;
+      console.warn('[NetworkMaxx:ConnectNotes] Transient error on attempt ' + (attempt + 1) + ', retrying in ' + TRANSIENT_RETRY_DELAYS_MS[attempt] + 'ms');
+      await delay(TRANSIENT_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
+
+async function callGeminiForConnectionNotes(profileData, apiKey, model, personalStyle, humilityLevel) {
+  console.log('[NetworkMaxx:ConnectNotes] Generating connection notes with ' + model);
+
+  const prompt = buildConnectionNotePrompt(profileData, personalStyle, humilityLevel);
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + apiKey;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        responseMimeType: 'application/json',
+        responseJsonSchema: {
+          type: 'object',
+          properties: {
+            notes: { type: 'array', items: { type: 'string' } }
+          },
+          required: ['notes']
+        }
+      }
+    })
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    const msg = (data && data.error && data.error.message) ? data.error.message : ('HTTP ' + res.status);
+    const err = new Error(msg);
+    err.status = res.status;
+    if (res.status === 429) {
+      setCooldown(apiKey, model);
+      err.retryNextModel = true;
+    }
+    throw err;
+  }
+
+  const text = (data.candidates &&
+    data.candidates[0] &&
+    data.candidates[0].content &&
+    data.candidates[0].content.parts &&
+    data.candidates[0].content.parts[0] &&
+    data.candidates[0].content.parts[0].text) || '';
+
+  const parsed = robustParseJson(text);
+  let notes = parsed && Array.isArray(parsed.notes) ? parsed.notes : [];
+
+  if (!notes.length) {
+    const fallbackList = parseSuggestions(text);
+    notes = flattenSuggestions(fallbackList);
+  }
+
+  // Sanitize notes through cleanConnectionNote
+  notes = notes
+    .map(n => cleanConnectionNote(n))
+    .filter(Boolean);
+
+  if (!notes.length) {
+    const err = new Error('Empty connection notes from ' + model);
+    err.retryNextModel = true;
+    throw err;
+  }
+
+  return { notes, debugPrompt: prompt };
+}
+
+// ─── Suggestions API chain ──────────────────────────────────────────────────
 
 async function fetchSuggestions(postText, postAuthor, apiKey, modelMode, personalStyle, refinement, currentComment, humilityLevel) {
   const models = MODEL_CHAINS[modelMode] || MODEL_CHAINS[DEFAULT_MODEL_MODE];

@@ -323,3 +323,14 @@
 .butterfly-post-btn:active {
   transform: scale(0.96) translateY(0.5px);
 }
+
+/* Connect Toast & Modal Bar */
+.butterfly-connect-toast {
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.butterfly-modal-ai-bar {
+  box-sizing: border-box;
+}
+

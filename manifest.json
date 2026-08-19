@@ -22,7 +22,14 @@
         "https://www.linkedin.com/*"
       ],
       "js": [
-        "content_linkedin.js"
+        "src/linkedin/utils.js",
+        "src/linkedin/extractor.js",
+        "src/linkedin/gemini_service.js",
+        "src/linkedin/floating_ui.js",
+        "src/linkedin/easy_connect.js",
+        "src/linkedin/comment_injector.js",
+        "src/linkedin/master_generate.js",
+        "src/linkedin/main.js"
       ],
       "css": [
         "content_styles.css"
@@ -48,7 +55,9 @@
         "https://www.linkedin.com/in/*/recent-activity/comments/*"
       ],
       "js": [
-        "content_scraper.js"
+        "src/scraper/scraper_ui.js",
+        "src/scraper/scraper_core.js",
+        "src/scraper/main.js"
       ],
       "run_at": "document_idle"
     }
