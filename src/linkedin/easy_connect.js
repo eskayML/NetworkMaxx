@@ -1,6 +1,7 @@
 // src/linkedin/easy_connect.js — Intelligent Personalized Connect Engine (Hormozi $100M Offers + Voyager API + Template Selector)
 'use strict';
 
+const DEFAULT_VOICE_TEMPLATE = `Hi {firstName}, dentists have a lot of missed calls that go unanswered, I would love to build a voice agent for {company}, it would cost you $0 because I am trying to build out case studies for my agency. Is this something you would be interested in?`;
 const DEFAULT_HORMOZI_TEMPLATE = `hey {firstName}, building case studies for my AI portfolio and put together a teardown of how {company} could automate its data pipelines. mind if i send the breakdown over?`;
 const DEFAULT_JOB_TEMPLATE = `hey {firstName}, saw what you're building at {company}. i build production AI agents and stealth scrapers (leadork, durag). curious if you're looking for cracked engineers or tackling hard automation bottlenecks right now?`;
 
@@ -213,12 +214,19 @@ async function getOutreachNoteForProfile(profile, forcedMode = null) {
   return new Promise((resolve) => {
     chrome.storage.sync.get([
       'connectMode',
+      'templateVoiceAgent',
       'templateFreeAudit',
       'templateJobInquiry'
     ], async (settings) => {
-      const mode = forcedMode || settings.connectMode || 'hormozi_audit';
+      const mode = forcedMode || settings.connectMode || 'voice_agent';
+      const voiceTpl = settings.templateVoiceAgent || DEFAULT_VOICE_TEMPLATE;
       const hormoziTpl = settings.templateFreeAudit || DEFAULT_HORMOZI_TEMPLATE;
       const jobTpl = settings.templateJobInquiry || DEFAULT_JOB_TEMPLATE;
+
+      if (mode === 'voice_agent') {
+        resolve(renderOutreachTemplate(voiceTpl, profile));
+        return;
+      }
 
       if (mode === 'hormozi_audit') {
         resolve(renderOutreachTemplate(hormoziTpl, profile));
@@ -239,7 +247,7 @@ async function getOutreachNoteForProfile(profile, forcedMode = null) {
         }
       } catch (_) {}
 
-      resolve(renderOutreachTemplate(hormoziTpl, profile));
+      resolve(renderOutreachTemplate(voiceTpl, profile));
     });
   });
 }
@@ -462,10 +470,17 @@ async function injectModalOfferPills(textarea) {
     <div style="font-size: 11px; font-weight: 700; color: #004182; width: 100%; display: flex; align-items: center; gap: 4px; margin-bottom: 2px;">
       ${SPARKLE_ICON_SVG} NetworkMaxx Quick Offers
     </div>
+    <button type="button" class="butterfly-pill" id="pill-voice" style="flex: 1; padding: 4px 8px; font-size: 11px;">🎙️ Voice Pilot</button>
     <button type="button" class="butterfly-pill" id="pill-hormozi" style="flex: 1; padding: 4px 8px; font-size: 11px;">⚡ Free Teardown</button>
     <button type="button" class="butterfly-pill" id="pill-job" style="flex: 1; padding: 4px 8px; font-size: 11px;">🎯 Builder Inquiry</button>
     <button type="button" class="butterfly-pill" id="pill-ai" style="flex: 1; padding: 4px 8px; font-size: 11px;">🤖 AI Context</button>
   `;
+
+  bar.querySelector('#pill-voice').onclick = async (e) => {
+    e.preventDefault();
+    const note = await getOutreachNoteForProfile(profileData, 'voice_agent');
+    setEmberTextareaValue(textarea, note);
+  };
 
   bar.querySelector('#pill-hormozi').onclick = async (e) => {
     e.preventDefault();
@@ -512,6 +527,7 @@ async function openFloatingOfferPicker(targetBtn) {
   }
 
   const profileData = extractTargetProfileData();
+  const voiceNote   = await getOutreachNoteForProfile(profileData, 'voice_agent');
   const hormoziNote = await getOutreachNoteForProfile(profileData, 'hormozi_audit');
   const jobNote     = await getOutreachNoteForProfile(profileData, 'job_inquiry');
 
@@ -531,7 +547,16 @@ async function openFloatingOfferPicker(targetBtn) {
     </div>
 
     <div class="butterfly-offer-stack">
-      <!-- Option 1: Workflow Teardown -->
+      <!-- Option 1: Voice Agent Pilot -->
+      <div class="butterfly-offer-card" id="offer-card-voice">
+        <div class="butterfly-offer-badge">
+          <span>🎙️ Voice Agent Pilot (Free Case Study)</span>
+          <span class="butterfly-offer-action-hint">Click to Send ➔</span>
+        </div>
+        <div class="butterfly-offer-text">${voiceNote}</div>
+      </div>
+
+      <!-- Option 2: Workflow Teardown -->
       <div class="butterfly-offer-card" id="offer-card-hormozi">
         <div class="butterfly-offer-badge">
           <span>⚡ Free Workflow Teardown</span>
@@ -540,7 +565,7 @@ async function openFloatingOfferPicker(targetBtn) {
         <div class="butterfly-offer-text">${hormoziNote}</div>
       </div>
 
-      <!-- Option 2: Cracked AI Builder Inquiry -->
+      <!-- Option 3: Cracked AI Builder Inquiry -->
       <div class="butterfly-offer-card" id="offer-card-job">
         <div class="butterfly-offer-badge">
           <span>🎯 Cracked AI Builder Inquiry</span>
@@ -584,6 +609,11 @@ async function openFloatingOfferPicker(targetBtn) {
     }
   }
 
+  popover.querySelector('#offer-card-voice').onclick = (e) => {
+    e.preventDefault();
+    handleOptionSelect(popover.querySelector('#offer-card-voice'), voiceNote, false);
+  };
+
   popover.querySelector('#offer-card-hormozi').onclick = (e) => {
     e.preventDefault();
     handleOptionSelect(popover.querySelector('#offer-card-hormozi'), hormoziNote, false);
@@ -596,7 +626,7 @@ async function openFloatingOfferPicker(targetBtn) {
 
   popover.querySelector('#offer-edit-modal-btn').onclick = (e) => {
     e.preventDefault();
-    handleOptionSelect(null, hormoziNote, true);
+    handleOptionSelect(null, voiceNote, true);
   };
 
   document.body.appendChild(popover);
@@ -721,12 +751,113 @@ function injectEasyConnectButton() {
   setupModalNoteAssistant();
 }
 
+// ─── Automated Lead Attacker Dispatcher ──────────────────────────────────────
+
+async function handleAutomatedLeadConnect(leadData, offerMode = 'voice_agent') {
+  console.log('%c[NetworkMaxx:LeadAttacker] Processing automated connect for:', 'color: #00ff88; font-weight: bold;', leadData);
+
+  // 1. Give dynamic scripts 1.2s to hydrate
+  await new Promise(r => setTimeout(r, 1200));
+
+  // 2. Extract DOM profile info or fallback to leadData
+  const domProfile = extractTargetProfileData();
+  const mergedProfile = {
+    firstName: leadData?.firstName || domProfile?.firstName || 'there',
+    company: leadData?.company || domProfile?.company || 'your practice',
+    fullName: (leadData?.firstName && leadData?.lastName) ? `${leadData.firstName} ${leadData.lastName}` : (domProfile?.fullName || 'there'),
+    headline: domProfile?.headline || leadData?.title || ''
+  };
+
+  // 3. Render connection note
+  const note = await getOutreachNoteForProfile(mergedProfile, offerMode);
+
+  // 4. Try Voyager API direct connection
+  const memberUrn = await extractTargetMemberUrn();
+  if (memberUrn) {
+    try {
+      await sendVoyagerConnectionRequest(memberUrn, note);
+      showFloatingToast(`✅ Auto-sent offer to ${mergedProfile.firstName}!`, 'success');
+      return { success: true, method: 'voyager', note };
+    } catch (voyagerErr) {
+      console.warn('[NetworkMaxx:LeadAttacker] Voyager direct send failed, attempting DOM fallback:', voyagerErr);
+      const errMsg = voyagerErr?.message || '';
+      if (errMsg.includes('CANT_INVITE') || errMsg.includes('ALREADY_CONNECTED') || errMsg.includes('PENDING')) {
+        return { success: false, error: 'Already connected or invitation pending', skipped: true };
+      }
+    }
+  }
+
+  // 5. Fallback to DOM Modal Injection & Send
+  try {
+    const topCard = document.querySelector('div[id*="Topcard"], section[componentkey*="Topcard"], .pv-top-card, main#workspace section, section.artdeco-card') || document.body;
+    let connectBtn = findDirectConnectButton(topCard);
+
+    if (!connectBtn) {
+      const moreBtn = findMoreActionsButton(topCard);
+      if (moreBtn) {
+        clickElement(moreBtn);
+        await new Promise(r => setTimeout(r, 600));
+
+        const startWait = Date.now();
+        while (Date.now() - startWait < 3000) {
+          connectBtn = findConnectInDropdown();
+          if (connectBtn) break;
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
+    }
+
+    if (!connectBtn) {
+      return { success: false, error: 'Connect button not found or already connected' };
+    }
+
+    clickElement(connectBtn);
+    let noteBtn = await waitForAddNoteButton(3500);
+    if (noteBtn) {
+      clickElement(noteBtn);
+      await new Promise(r => setTimeout(r, 600));
+    }
+
+    const textarea = await waitForInviteTextarea(4000);
+    if (textarea) {
+      setEmberTextareaValue(textarea, note);
+      await new Promise(r => setTimeout(r, 500));
+
+      const sendBtn = Array.from(document.querySelectorAll('button'))
+        .find(b => b.textContent.trim().toLowerCase() === 'send' || b.getAttribute('aria-label')?.toLowerCase().includes('send invitation'));
+      if (sendBtn) {
+        clickElement(sendBtn);
+        await new Promise(r => setTimeout(r, 800));
+        return { success: true, method: 'modal_sent', note };
+      }
+      return { success: true, method: 'modal_injected', note };
+    }
+
+    return { success: false, error: 'Invite modal textarea not found' };
+  } catch (domErr) {
+    return { success: false, error: domErr.message || 'Modal automation failed' };
+  }
+}
+
+// Listen for background tab auto-connect triggers
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'EXECUTE_AUTO_CONNECT') {
+      handleAutomatedLeadConnect(message.lead, message.offerMode)
+        .then(res => sendResponse(res))
+        .catch(err => sendResponse({ error: err?.message || 'Auto connect execution failed' }));
+      return true; // Keep message channel open for async response
+    }
+  });
+}
+
 if (typeof window !== 'undefined') {
   window.__easyConnect = openFloatingOfferPicker;
   window.__extractTargetProfileData = extractTargetProfileData;
   window.__extractTargetMemberUrn = extractTargetMemberUrn;
   window.__sendVoyagerConnectionRequest = sendVoyagerConnectionRequest;
   window.__getOutreachNoteForProfile = getOutreachNoteForProfile;
+  window.__handleAutomatedLeadConnect = handleAutomatedLeadConnect;
 }
 
 

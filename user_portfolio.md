@@ -1,7 +1,7 @@
 # Samuel Kalu (eskayML) — Technical Portfolio & Experience Knowledge Base
 
 > **Title**: AI / ML Engineer  
-> **Website**: [eskayml.xyz](https://eskayml.xyz) | **GitHub**: [github.com/eskayML](https://github.com/eskayML) | **LinkedIn**: [linkedin.com/in/eskayml](https://linkedin.com/in/eskayml)  
+> **Website**: [eskayml.com](https://eskayml.com) | **GitHub**: [github.com/eskayML](https://github.com/eskayML) | **LinkedIn**: [linkedin.com/in/eskayml](https://linkedin.com/in/eskayml)  
 > **Contact**: kalusam619@gmail.com | Remote (GMT+1)
 
 ---

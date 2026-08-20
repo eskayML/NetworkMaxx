@@ -1,4 +1,9 @@
 // background.js — Butterfly service worker
+try {
+  importScripts('src/leads/lead_manager.js', 'src/leads/dentist_leads_data.js');
+} catch (e) {
+  console.warn('[NetworkMaxx:Background] importScripts failed:', e);
+}
 
 const DEFAULT_MODEL_MODE = 'flash';
 const MODEL_CHAINS = {
@@ -71,6 +76,42 @@ const DEFAULT_STYLE_SAMPLES = [
 // ─── Message listener ────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // ─── Lead Attacker Dispatchers ──────────────────────────────────────────────
+  if (message.type === 'LEAD_ATTACKER_GET_STATE') {
+    getLeadAttackerSummary().then(res => sendResponse(res));
+    return true;
+  }
+
+  if (message.type === 'LEAD_ATTACKER_LOAD_PRESET') {
+    loadDentistPresetLeads().then(res => sendResponse(res));
+    return true;
+  }
+
+  if (message.type === 'LEAD_ATTACKER_LOAD_CSV') {
+    importCustomLeadCSV(message.csvText).then(res => sendResponse(res));
+    return true;
+  }
+
+  if (message.type === 'LEAD_ATTACKER_START') {
+    startLeadAttackBatch(message.options).then(res => sendResponse(res));
+    return true;
+  }
+
+  if (message.type === 'LEAD_ATTACKER_PAUSE') {
+    pauseLeadAttackBatch().then(res => sendResponse(res));
+    return true;
+  }
+
+  if (message.type === 'LEAD_ATTACKER_RESET') {
+    resetLeadAttackerQueue(message.mode).then(res => sendResponse(res));
+    return true;
+  }
+
+  if (message.type === 'LEAD_ATTACKER_UPDATE_SETTINGS') {
+    updateLeadAttackerSettings(message.settings).then(res => sendResponse(res));
+    return true;
+  }
+
   if (message.type === 'GEMINI_CONNECT_NOTE') {
     const { fullName, firstName, headline, company, aboutText, recentPostText } = message;
 
@@ -698,3 +739,378 @@ function setCooldown(apiKey, model) {
 function delay(ms) {
   return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
+
+// ─── Lead Attacker & Automated Batch Outreach Engine ──────────────────────────
+
+let isLeadAttackRunning = false;
+let stopLeadAttackRequested = false;
+
+async function getLeadAttackerStorage() {
+  const data = await chrome.storage.local.get([
+    'leadQueue',
+    'leadAttackerSettings',
+    'leadAttackerLiveStatus'
+  ]);
+
+  const queue = data.leadQueue || [];
+  const settings = Object.assign({
+    batchSize: 5,
+    minDelaySec: 5,
+    maxDelaySec: 10,
+    autoCloseTab: true,
+    offerMode: 'voice_agent',
+    runContinuous: false
+  }, data.leadAttackerSettings || {});
+
+  const liveStatus = Object.assign({
+    isRunning: isLeadAttackRunning,
+    isPaused: false,
+    statusText: queue.length ? `Loaded ${queue.length} leads. Ready to launch.` : 'No leads loaded yet.',
+    activeLead: null,
+    nextActionTimestamp: null,
+    processedInBatch: 0,
+    batchTarget: settings.batchSize
+  }, data.leadAttackerLiveStatus || {});
+
+  return { queue, settings, liveStatus };
+}
+
+async function saveLeadQueue(queue) {
+  await chrome.storage.local.set({ leadQueue: queue });
+}
+
+async function saveLeadAttackerSettings(settings) {
+  await chrome.storage.local.set({ leadAttackerSettings: settings });
+}
+
+async function updateLeadAttackerLiveStatus(patch) {
+  const data = await chrome.storage.local.get(['leadAttackerLiveStatus']);
+  const current = data.leadAttackerLiveStatus || {};
+  const updated = Object.assign({}, current, patch, { updatedAt: Date.now() });
+  await chrome.storage.local.set({ leadAttackerLiveStatus: updated });
+  return updated;
+}
+
+async function getLeadAttackerSummary() {
+  const { queue, settings, liveStatus } = await getLeadAttackerStorage();
+
+  const total = queue.length;
+  const sent = queue.filter(l => l.status === 'sent').length;
+  const failed = queue.filter(l => l.status === 'failed').length;
+  const skipped = queue.filter(l => l.status === 'skipped').length;
+  const pending = queue.filter(l => l.status === 'pending' || l.status === 'processing').length;
+
+  return {
+    queue,
+    settings,
+    liveStatus: Object.assign({}, liveStatus, { isRunning: isLeadAttackRunning }),
+    stats: { total, sent, failed, skipped, pending }
+  };
+}
+
+async function loadDentistPresetLeads() {
+  let preset = [];
+  if (typeof DENTIST_LEADS_PRESET !== 'undefined' && Array.isArray(DENTIST_LEADS_PRESET)) {
+    preset = DENTIST_LEADS_PRESET;
+  } else {
+    try {
+      if (typeof parseLeadCSV === 'function') {
+        // Fallback
+        preset = [];
+      }
+    } catch (_) {}
+  }
+
+  // Clone with fresh IDs if needed
+  const leads = preset.map((l, i) => Object.assign({}, l, {
+    id: `dentist_${i + 1}_${Math.random().toString(36).slice(2, 6)}`,
+    status: 'pending',
+    sentAt: null,
+    error: null
+  }));
+
+  await saveLeadQueue(leads);
+  await updateLeadAttackerLiveStatus({
+    statusText: `Loaded ${leads.length} Dentist Leads successfully!`,
+    isRunning: false,
+    isPaused: false
+  });
+
+  return await getLeadAttackerSummary();
+}
+
+async function importCustomLeadCSV(csvText) {
+  if (!csvText || typeof csvText !== 'string') {
+    throw new Error('No CSV content provided');
+  }
+
+  let leads = [];
+  if (typeof parseLeadCSV === 'function') {
+    leads = parseLeadCSV(csvText);
+  } else {
+    throw new Error('CSV parser not loaded in background worker');
+  }
+
+  if (!leads.length) {
+    throw new Error('No valid LinkedIn leads found in CSV. Ensure rows have a valid LinkedIn profile URL.');
+  }
+
+  await saveLeadQueue(leads);
+  await updateLeadAttackerLiveStatus({
+    statusText: `Imported ${leads.length} leads from CSV!`,
+    isRunning: false,
+    isPaused: false
+  });
+
+  return await getLeadAttackerSummary();
+}
+
+async function updateLeadAttackerSettings(newSettings) {
+  const { settings } = await getLeadAttackerStorage();
+  const merged = Object.assign({}, settings, newSettings);
+  await saveLeadAttackerSettings(merged);
+  return await getLeadAttackerSummary();
+}
+
+async function resetLeadAttackerQueue(mode = 'all_pending') {
+  const { queue } = await getLeadAttackerStorage();
+
+  if (mode === 'clear') {
+    await saveLeadQueue([]);
+    await updateLeadAttackerLiveStatus({
+      statusText: 'Queue cleared.',
+      isRunning: false,
+      isPaused: false,
+      activeLead: null
+    });
+  } else {
+    // Reset all statuses to pending
+    const resetList = queue.map(l => Object.assign({}, l, {
+      status: 'pending',
+      sentAt: null,
+      error: null
+    }));
+    await saveLeadQueue(resetList);
+    await updateLeadAttackerLiveStatus({
+      statusText: `Reset all ${resetList.length} leads back to pending.`,
+      isRunning: false,
+      isPaused: false,
+      activeLead: null
+    });
+  }
+
+  return await getLeadAttackerSummary();
+}
+
+async function pauseLeadAttackBatch() {
+  stopLeadAttackRequested = true;
+  isLeadAttackRunning = false;
+  await updateLeadAttackerLiveStatus({
+    isRunning: false,
+    isPaused: true,
+    statusText: 'Automation paused by user.'
+  });
+  return await getLeadAttackerSummary();
+}
+
+async function startLeadAttackBatch(options = {}) {
+  if (isLeadAttackRunning) {
+    return await getLeadAttackerSummary();
+  }
+
+  isLeadAttackRunning = true;
+  stopLeadAttackRequested = false;
+
+  const { queue, settings } = await getLeadAttackerStorage();
+  const batchSize = Number(options.batchSize || settings.batchSize || 5);
+  const minDelaySec = Number(options.minDelaySec || settings.minDelaySec || 5);
+  const maxDelaySec = Number(options.maxDelaySec || settings.maxDelaySec || 10);
+  const minBatchCooldownSec = Number(options.minBatchCooldownSec || 10);
+  const maxBatchCooldownSec = Number(options.maxBatchCooldownSec || 15);
+  const autoCloseTab = options.autoCloseTab !== undefined ? options.autoCloseTab : (settings.autoCloseTab !== false);
+  const offerMode = options.offerMode || settings.offerMode || 'voice_agent';
+
+  let currentBatchNumber = 1;
+
+  await updateLeadAttackerLiveStatus({
+    isRunning: true,
+    isPaused: false,
+    statusText: `Starting continuous attack (Batches of ${batchSize}, ${offerMode} offer)...`,
+    processedInBatch: 0,
+    batchTarget: batchSize,
+    batchNumber: currentBatchNumber
+  });
+
+  // Run in background service worker without blocking
+  (async () => {
+    let processedInThisBatch = 0;
+    let totalProcessedSession = 0;
+
+    try {
+      while (!stopLeadAttackRequested && isLeadAttackRunning) {
+        const { queue: freshQueue } = await getLeadAttackerStorage();
+        const leadIdx = freshQueue.findIndex(l => l.status === 'pending');
+
+        if (leadIdx === -1) {
+          isLeadAttackRunning = false;
+          await updateLeadAttackerLiveStatus({
+            isRunning: false,
+            isPaused: false,
+            statusText: `🎉 All leads in queue have been processed! (${totalProcessedSession} total sent/attempted)`
+          });
+          break;
+        }
+
+        // Check if current batch reached its target
+        if (processedInThisBatch >= batchSize) {
+          // Reset batch counter
+          processedInThisBatch = 0;
+          currentBatchNumber++;
+
+          // ☕ Inter-Batch Cooldown: Wait 10 to 15 seconds before starting next batch
+          const batchCooldownSec = Math.random() * (maxBatchCooldownSec - minBatchCooldownSec) + minBatchCooldownSec;
+          const batchCooldownMs = Math.round(batchCooldownSec * 1000);
+          const nextBatchTime = Date.now() + batchCooldownMs;
+
+          await updateLeadAttackerLiveStatus({
+            statusText: `☕ Batch #${currentBatchNumber - 1} completed! Resting ${(batchCooldownMs / 1000).toFixed(1)}s before launching Batch #${currentBatchNumber}...`,
+            nextActionTimestamp: nextBatchTime,
+            processedInBatch: 0,
+            batchNumber: currentBatchNumber
+          });
+
+          await delay(batchCooldownMs);
+
+          if (stopLeadAttackRequested || !isLeadAttackRunning) break;
+        }
+
+        const lead = freshQueue[leadIdx];
+        lead.status = 'processing';
+        freshQueue[leadIdx] = lead;
+        await saveLeadQueue(freshQueue);
+
+        await updateLeadAttackerLiveStatus({
+          activeLead: lead,
+          processedInBatch: processedInThisBatch + 1,
+          batchTarget: batchSize,
+          batchNumber: currentBatchNumber,
+          statusText: `[Batch #${currentBatchNumber}: ${processedInThisBatch + 1}/${batchSize}] Opening ${lead.firstName} (${lead.company})...`
+        });
+
+        // 1. Open background tab
+        let tab = null;
+        try {
+          tab = await chrome.tabs.create({ url: lead.linkedinUrl, active: false });
+        } catch (tabErr) {
+          console.error('[NetworkMaxx:LeadAttacker] Tab create error:', tabErr);
+          lead.status = 'failed';
+          lead.error = tabErr?.message || 'Failed to open tab';
+          freshQueue[leadIdx] = lead;
+          await saveLeadQueue(freshQueue);
+          processedInThisBatch++;
+          totalProcessedSession++;
+          continue;
+        }
+
+        // 2. Wait for page load
+        await waitForTabComplete(tab.id, 20000);
+        await delay(2500); // Allow dynamic scripts to mount
+
+        if (stopLeadAttackRequested) {
+          if (autoCloseTab && tab) chrome.tabs.remove(tab.id).catch(() => {});
+          break;
+        }
+
+        // 3. Dispatch auto-connect message to content script
+        let res = null;
+        try {
+          res = await chrome.tabs.sendMessage(tab.id, {
+            type: 'EXECUTE_AUTO_CONNECT',
+            lead,
+            offerMode
+          });
+        } catch (msgErr) {
+          console.warn('[NetworkMaxx:LeadAttacker] Content message error:', msgErr);
+          res = { error: msgErr?.message || 'Could not communicate with LinkedIn page' };
+        }
+
+        // 4. Update lead status based on result
+        if (res && res.success) {
+          lead.status = 'sent';
+          lead.sentAt = new Date().toISOString();
+          lead.error = null;
+          lead.method = res.method;
+        } else {
+          lead.status = res?.skipped ? 'skipped' : 'failed';
+          lead.error = res?.error || 'Connection attempt failed';
+        }
+
+        freshQueue[leadIdx] = lead;
+        await saveLeadQueue(freshQueue);
+        processedInThisBatch++;
+        totalProcessedSession++;
+
+        // 5. Close tab if configured
+        if (autoCloseTab && tab) {
+          try {
+            await chrome.tabs.remove(tab.id);
+          } catch (_) {}
+        }
+
+        if (stopLeadAttackRequested) break;
+
+        // 6. Check if more leads exist in this batch vs next batch
+        if (processedInThisBatch >= batchSize) {
+          // Will trigger the 10-15s inter-batch cooldown at the top of the next loop iteration
+          continue;
+        }
+
+        // 7. Intra-batch human-like delay between 5s and 10s
+        const safeMin = Math.max(3, minDelaySec);
+        const safeMax = Math.max(safeMin + 1, maxDelaySec);
+        const delaySec = Math.random() * (safeMax - safeMin) + safeMin;
+        const delayMs = Math.round(delaySec * 1000);
+        const nextTime = Date.now() + delayMs;
+
+        await updateLeadAttackerLiveStatus({
+          statusText: `${lead.status === 'sent' ? '✅ Sent to' : '⚠️ ' + lead.status} ${lead.firstName} @ ${lead.company}. Next lead in ${(delayMs / 1000).toFixed(1)}s...`,
+          nextActionTimestamp: nextTime
+        });
+
+        await delay(delayMs);
+      }
+    } catch (loopErr) {
+      console.error('[NetworkMaxx:LeadAttacker] Loop error:', loopErr);
+      await updateLeadAttackerLiveStatus({
+        isRunning: false,
+        isPaused: false,
+        statusText: `Error: ${loopErr.message}`
+      });
+    } finally {
+      isLeadAttackRunning = false;
+      stopLeadAttackRequested = false;
+    }
+  })();
+
+  return await getLeadAttackerSummary();
+}
+
+function waitForTabComplete(tabId, timeoutMs = 20000) {
+  return new Promise(resolve => {
+    let timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve(false);
+    }, timeoutMs);
+
+    function onUpdated(updatedTabId, changeInfo) {
+      if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        resolve(true);
+      }
+    }
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
