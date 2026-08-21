@@ -31,3 +31,5 @@
 1. **Never Dispatch Duplicate Click Events**: When triggering synthetic clicks on LinkedIn Ember buttons, calculate exact element bounding centers and dispatch a clean sequence (`pointerdown` → `mousedown` → `pointerup` → `mouseup` → `click` + `target.click()`).
 2. **Never Query Global Textareas for Modal State**: Always scope modal textareas to `div[data-test-modal-id="send-invite-modal"]` or `.send-invite` to avoid collisions with LinkedIn's background messaging overlay drawer.
 3. **Handle Service Worker Sleep**: Always implement auto-retry for `Receiving end does not exist` when communicating with the background service worker in MV3.
+4. **Permanent Authentic Voice & Anti-AI Rule**: Every time prose, comments, outreach notes, or pitches are written or modified, strictly enforce `.agents/skills/stop-slop/SKILL.md` and match `.agents/context/voice-samples/voice-profile.md` without exception. Zero AI slop, zero buzzwords, zero em dashes.
+

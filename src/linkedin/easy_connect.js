@@ -1,7 +1,7 @@
 // src/linkedin/easy_connect.js — Intelligent Personalized Connect Engine (Hormozi $100M Offers + Voyager API + Template Selector)
 'use strict';
 
-const DEFAULT_VOICE_TEMPLATE = `Hi {firstName}, dentists have a lot of missed calls that go unanswered, I would love to build a voice agent for {company}, it would cost you $0 because I am trying to build out case studies for my agency. Is this something you would be interested in?`;
+const DEFAULT_VOICE_TEMPLATE = `Hi {firstName}, I'd like to build a free AI receptionist for {company} that answers calls, handles FAQs and books appointments. Offering it at $0 for a case study. Would you be open to it?`;
 const DEFAULT_HORMOZI_TEMPLATE = `hey {firstName}, building case studies for my AI portfolio and put together a teardown of how {company} could automate its data pipelines. mind if i send the breakdown over?`;
 const DEFAULT_JOB_TEMPLATE = `hey {firstName}, saw what you're building at {company}. i build production AI agents and stealth scrapers (leadork, durag). curious if you're looking for cracked engineers or tackling hard automation bottlenecks right now?`;
 
